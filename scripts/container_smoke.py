@@ -74,6 +74,9 @@ def main():
                 event = {"action": "message.created", "data": {"id": "dummy"}}
                 assert request(base, f"/webhook/hospitable/{account_id}?token={account_id}-hook", event)[1]["action"] == "queued"
                 docker("restart", "--time", "20", name)
+                # An ephemeral published host port can change on restart.
+                port = docker("port", name, "8790/tcp").split(":")[-1]
+                base = "http://127.0.0.1:" + port
                 wait_ready(base)
                 request(base, f"/webhook/hospitable/{account_id}?token={account_id}-hook", event)
                 counts = request(base, "/admin/inbox", token=account_id + "-admin")[1]["counts"]
