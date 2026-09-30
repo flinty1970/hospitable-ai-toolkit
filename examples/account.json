@@ -1,0 +1,53 @@
+{
+  "account": {
+    "id": "account-one",
+    "enabled": true,
+    "shadow": true,
+    "home_assistant": {
+      "enabled": false,
+      "heating_enabled": false
+    },
+    "notifications": {
+      "ha": {
+        "enabled": false
+      },
+      "email": {
+        "enabled": true,
+        "msmtp_config_file": "/run/toolkit-secrets/msmtprc",
+        "msmtp_account": "owner",
+        "sender": "host@example.com",
+        "recipients": [
+          "host@example.com"
+        ]
+      }
+    },
+    "indexing": {
+      "enabled": false,
+      "daily_at": "00:00",
+      "timezone": "Europe/London"
+    },
+    "properties": {
+      "replace-with-property-1-uuid": {
+        "name": "Property 1",
+        "timezone": "Europe/London",
+        "enabled": true,
+        "shadow": true,
+        "model_key_env": "ANTHROPIC_API_KEY",
+        "model": "claude-sonnet-4-6"
+      },
+      "replace-with-property-2-uuid": {
+        "name": "Property 2",
+        "timezone": "Europe/London",
+        "enabled": true,
+        "shadow": true,
+        "model_key_env": "ANTHROPIC_API_KEY",
+        "model": "claude-sonnet-4-6"
+      }
+    }
+  },
+  "mcp": {
+    "enabled": false,
+    "resource_url": "https://example.com/toolkit/account-one/mcp",
+    "issuer_url": "https://example.com"
+  }
+}

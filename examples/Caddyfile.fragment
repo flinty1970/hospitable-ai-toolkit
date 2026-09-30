@@ -1,0 +1,13 @@
+# Insert into the existing HTTPS site; keep Windsor's routes intact.
+# Duplicate these routes for account-two using host port 8791.
+# This is URL-token authentication; signing still needs confirmation.
+@toolkit_webhook path /webhook/hospitable/account-one
+handle @toolkit_webhook {
+    reverse_proxy 127.0.0.1:8790
+}
+@toolkit_mcp path /toolkit/account-one/mcp /toolkit/account-one/mcp/* /.well-known/oauth-protected-resource/toolkit/account-one/mcp
+handle @toolkit_mcp {
+    reverse_proxy 127.0.0.1:8790
+}
+# Do not publicly proxy /admin/* or /ready. Ensure access logs do not retain
+# token query parameters. Configure only after validating the account in shadow.

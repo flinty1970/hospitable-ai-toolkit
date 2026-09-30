@@ -1,0 +1,46 @@
+services:
+  toolkit:
+    image: ${TOOLKIT_IMAGE:-hospitable-ai-toolkit:dev}
+    build:
+      context: .
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    init: false
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8790}:8790"
+    volumes:
+      - type: bind
+        source: ${INSTANCE_DIR:?Set an absolute INSTANCE_DIR}/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${INSTANCE_DIR}/data/config
+        target: /data/config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${INSTANCE_DIR}/secrets
+        target: /run/toolkit-secrets
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: ${MEM_LIMIT:-4g}
+    cpus: ${CPU_LIMIT:-2}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

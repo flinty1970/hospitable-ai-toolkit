@@ -1,0 +1,28 @@
+{
+  "clients": {
+    "owner": {
+      "enabled": true,
+      "token_env": "OWNER_MCP_TOKEN",
+      "accounts": {
+        "account-one": {
+          "permissions": [
+            "read",
+            "settings"
+          ],
+          "properties": {
+            "replace-with-property-1-uuid": [
+              "read",
+              "preview",
+              "settings"
+            ],
+            "replace-with-property-2-uuid": [
+              "read",
+              "preview",
+              "settings"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

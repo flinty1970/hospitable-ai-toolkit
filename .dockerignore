@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!requirements.txt
+!requirements-runtime.txt
+!hosting/
+!hosting/*.py
+!ingest.py

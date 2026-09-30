@@ -1,0 +1,11 @@
+defaults
+auth on
+tls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+
+account owner
+host smtp.example.com
+port 587
+from host@example.com
+user host@example.com
+password replace-with-this-owners-smtp-password

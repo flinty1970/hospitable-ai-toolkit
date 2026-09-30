@@ -1,0 +1,24 @@
+name: Toolkit tests and container smoke
+on: [push, pull_request]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-runtime.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q hosting tests ingest.py
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: INSTANCE_DIR=/tmp/example docker compose config --quiet
+      - name: Build CPU image
+        run: docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g) -t toolkit-ci .
+      - name: Two accounts, separate containers, restart persistence
+        run: python3 scripts/container_smoke.py toolkit-ci

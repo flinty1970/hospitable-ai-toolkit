@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.env
+!*.env.example
+data/
+secrets/
+*.sqlite*
+*.log
+*.bak
+dist/
+instance.env

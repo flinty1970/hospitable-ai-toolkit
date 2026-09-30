@@ -1,0 +1,5 @@
+-r requirements-runtime.txt
+chromadb==0.5.5
+posthog<3
+sentence-transformers==3.0.1
+numpy>=1.26,<2
