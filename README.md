@@ -1,0 +1,1 @@
+# Hospitable AI Toolkit\n\nOne Hospitable account per container, multiple selected properties, persistent local data. Implementation and deployment documentation are being added. Windsor remains in its separate windsor-rag repository.\n
