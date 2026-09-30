@@ -21,7 +21,7 @@ def main():
     prop = account["properties"][args.property_uuid]
     root = Path(prop["runtime_dir"])
     if args.action == "init":
-        for name in ("docs", "source-documents", "index", "state", "logs"):
+        for name in ("docs", "source-documents", "document-review", "index", "state", "logs"):
             (root / name).mkdir(parents=True, exist_ok=True, mode=0o700)
         print("Created empty property directories. Add this property's curated Markdown to docs/.")
         return
@@ -40,7 +40,8 @@ def main():
     if args.action == "reindex":
         if not root.is_dir():
             raise SystemExit("Run init and add curated docs first")
-        # Only curated property Markdown is indexed.
+        # Extract new PDFs to review; only approved Markdown is indexed.
+        subprocess.run([sys.executable, str(CODE_ROOT / "hosting/pdf_ingestion.py"), "convert"], env=env, cwd=root, check=True, timeout=300)
         subprocess.run([sys.executable, str(CODE_ROOT / "ingest.py")], env=env, cwd=root, check=True)
     elif args.action == "worker":
         # Registry validation inside a worker requires the registry references.

@@ -46,6 +46,7 @@ account-one/
     properties/
       property-uuid/
         source-documents/      # private archive, never automatically indexed
+        document-review/       # converted PDF Markdown awaiting approval
         docs/                  # curated guest-safe Markdown
         index/
           current.json         # completed active generation
@@ -114,9 +115,26 @@ not make Docker automatically restart a still-running container.
 
 ## Property documents and indexing
 
-Archive source PDFs/manuals under that property's `source-documents/`. Curate
-approved guest-safe facts into Markdown in its `docs/`; no raw private source
-is automatically ingested. A generic document-conversion UI is not implemented.
+Put PDFs/manuals under that property's `source-documents/`. Manual and daily
+ingestion extract new text-based PDFs into `document-review/` as Markdown, with
+page headings and source fingerprints. They never enter the guest index until
+you review/edit them and explicitly approve them into `docs/`. Installer
+instructions, access codes and private information must be removed during review.
+A document-conversion/review UI is not implemented.
+
+```bash
+docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one exec toolkit python -m hosting.cli convert-pdfs <property-uuid>
+# Review/edit the generated .md in the host property's document-review/ folder.
+docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one exec toolkit python -m hosting.cli approve-pdf <property-uuid> <converted-file.md>
+```
+
+Then run reindex below. Updated PDFs create new review versions; approval rejects
+a stale source fingerprint. Existing approved text requires `--replace`, so
+conversion cannot overwrite host edits. A conversion-report.json records errors
+and pages with no extracted text. Image-only scans require OCR (not yet included);
+mixed PDFs with missing pages require inspection and explicit `--allow-incomplete`
+to approve. Tables, drawings and complex layouts require manual checking; this
+is text extraction, not a promise of visually faithful conversion.
 
 ```bash
 docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one exec toolkit python -m hosting.cli reindex <property-uuid>

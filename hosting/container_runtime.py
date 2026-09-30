@@ -74,7 +74,7 @@ def prepare(data_root=None, secrets_root=None):
         property_root = (root / "properties" / folder).resolve()
         if (root / "properties").resolve() not in property_root.parents:
             raise ValueError("Property data escapes mounted data directory")
-        for name in ("docs", "source-documents", "index", "state", "logs"):
+        for name in ("docs", "source-documents", "document-review", "index", "state", "logs"):
             (property_root / name).mkdir(parents=True, exist_ok=True, mode=0o700)
         token_file = property_root / "state/worker-token"
         if not token_file.exists():
