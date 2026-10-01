@@ -60,7 +60,7 @@ def main():
                 base = "http://127.0.0.1:" + port
                 wait_ready(base)
                 settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
-                assert len(settings["properties"]) == 2 and not settings["auto_responses_available"]
+                assert len(settings["properties"]) == 2 and settings["auto_responses_available"]
                 assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "paused"}, token=account_id + "-admin")[1]["mode"] == "disabled"
                 if account_id == "one":
                     (data / "properties/property-one/docs/guide.md").write_text("Towels for property one are in the blue cupboard.")

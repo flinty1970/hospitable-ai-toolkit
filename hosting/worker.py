@@ -1,4 +1,4 @@
-"""Isolated property draft worker. No automatic guest sending."""
+"""Isolated property worker with explicit account/property sending controls."""
 import asyncio
 import json
 import os
@@ -23,8 +23,8 @@ Do not disclose passwords, door codes or private operational information.
 Do not diagnose faults or provide repair instructions. A fault, incident, booking
 change, missing fact or conflicting sources requires human review.
 Return ONLY a JSON object with action ('draft' or 'review'), answer (string),
-and reason (string). For review, answer must be empty. A draft is for operator
-approval and will not be sent to the guest automatically.
+and reason (string). For review, answer must be empty. Return a grounded draft suitable for the guest. The application, not the model,
+decides whether sending is enabled; human-review results are never sent.
 """
 
 # This is a conservative early gate, not a replacement for source grounding.
@@ -99,7 +99,7 @@ def create_app():
             effective = controls.effective(account_id, account, property_id)
             if not email_ready(os.environ['TOOLKIT_DATA_DIR'], account_id) or not effective['email_enabled']:
                 raise HTTPException(503, 'Tested owner email is required for review alerts; events remain pending')
-        if controls.effective(account_id, account, property_id)["mode"] != "shadow":
+        if controls.effective(account_id, account, property_id)["mode"] not in {"shadow", "automatic"}:
             raise HTTPException(503, "Processing paused or live sending unavailable")
         # Independent check also protects against accidental gateway misrouting.
         try:
@@ -116,6 +116,10 @@ def create_app():
             stored = db.execute("SELECT result FROM events WHERE event_key=?", (message_id,)).fetchone()
             if stored:
                 previous = json.loads(stored[0])
+                if previous.get('action') == 'send_pending':
+                    previous = {'action':'review','answer':'','reason':'Previous guest send outcome is uncertain; inspect conversation before replying'}
+                    db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(previous),message_id))
+                    outbox.enqueue(message_id, account_id, property_id, {'account_id':account_id,'property_id':property_id,'property_name':prop['name'],'message_id':message_id,'reason':previous['reason']},db=db)
                 return {"ok": True, "action": "review" if previous.get("action") == "review" else "duplicate", "duplicate": True}
         role = str(data.get("sender_type") or data.get("sender_role") or "").lower()
         message = data.get("body")
@@ -125,7 +129,7 @@ def create_app():
             result = {"action": "review", "answer": "", "reason": "Attachment or empty message requires review"}
         else:
             try:
-                if controls.effective(account_id, account, property_id)["mode"] != "shadow":
+                if controls.effective(account_id, account, property_id)["mode"] not in {"shadow", "automatic"}:
                     raise HTTPException(503, "Processing paused")
                 result = prepare_draft(prop, message.strip())
             except HTTPException:
@@ -133,15 +137,30 @@ def create_app():
             except Exception:
                 # A failed model/index call remains reviewable; never disappear.
                 result = {"action": "review", "answer": "", "reason": "Draft generation unavailable"}
+        attempted = False
+        if result['action'] == 'draft' and controls.effective(account_id, account, property_id)['mode'] == 'automatic':
+            attempted = True
+            with connect() as db:
+                db.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)', (message_id,json.dumps(payload),json.dumps({'action':'send_pending','answer':result['answer'],'reason':'Guest send in progress'}),time.time()))
+            try:
+                from hosting.guest_sending import send, SendReview
+                result = send(os.environ['TOOLKIT_DATA_DIR'], account_id, property_id, account, payload, result['answer'], controls)
+            except SendReview as error:
+                result = {'action':'review','answer':'','reason':str(error)}
+            except Exception:
+                result = {'action':'review','answer':'','reason':'Automatic reply not confirmed; inspect conversation before replying'}
         with connect() as db:
-            db.execute("INSERT INTO events VALUES(?,?,?,?)", (message_id, json.dumps(payload), json.dumps(result), time.time()))
+            if attempted:
+                db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(result),message_id))
+            else:
+                db.execute("INSERT INTO events VALUES(?,?,?,?)", (message_id, json.dumps(payload), json.dumps(result), time.time()))
             if result["action"] == "review":
                 outbox.enqueue(message_id, account_id, property_id, {
                     "account_id": account_id, "property_id": property_id,
                     "property_name": prop["name"], "message_id": message_id,
                     "reason": result["reason"], "guest_message": message[:1000] if isinstance(message, str) else "",
                 }, db=db)
-        return {"ok": True, "action": result["action"], "sent": False}
+        return {"ok": True, "action": result["action"], "sent": result["action"] == "sent"}
 
     @app.post("/webhook/hospitable")
     async def receive(request: Request):

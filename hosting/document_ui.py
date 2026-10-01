@@ -85,7 +85,13 @@ def install(app, accounts):
     @app.get('/admin/documents/properties')
     async def selected(request: Request):
         authorize(request)
-        return {'properties': [{'id': pid, 'name': prop.get('name', pid)} for pid, prop in properties.items()]}
+        from hosting.account_details import read as display_details
+        import os
+        names = {}
+        if os.environ.get('TOOLKIT_DATA_DIR'):
+            for aid in accounts:
+                names.update(display_details(os.environ['TOOLKIT_DATA_DIR'], aid).get('properties', {}))
+        return {'properties': [{'id': pid, 'name': names.get(pid, {}).get('nickname') or prop.get('name', pid)} for pid, prop in properties.items()]}
 
     @app.get('/admin/documents/{pid}')
     async def documents(pid: str, request: Request):

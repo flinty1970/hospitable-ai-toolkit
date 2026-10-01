@@ -74,7 +74,7 @@ def install(app, accounts, data_root=None):
                 'properties': [{'id': pid, 'name': display.get('properties', {}).get(pid, {}).get('nickname') or prop['name'], 'timezone': prop['timezone'],
                     'settings': controls.effective(aid, account, pid), 'channels': display.get('properties', {}).get(pid)} for pid, prop in account['properties'].items()],
                 'pending_properties': [{'id': pid, **prop} for pid, prop in pending.items() if pid not in account['properties']],
-                'setup_required': not bool(account['properties']), 'auto_responses_available': False,
+                'setup_required': not bool(account['properties']), 'auto_responses_available': True,
                 'heating_available': False, 'ai': public_settings(root, aid, account), 'smtp': smtp_public_settings(root, aid)}
         return await task(snapshot)
 
@@ -150,13 +150,15 @@ def install(app, accounts, data_root=None):
         if pid is not None and (not isinstance(pid, str) or pid not in account['properties']):
             raise HTTPException(404, 'Imported property not found')
         mode = value.get('response_mode')
-        if mode is not None and mode not in {'draft', 'paused'}:
-            raise HTTPException(409, 'Automatic guest responses are not implemented')
+        if mode is not None and mode not in {'draft', 'paused', 'automatic'}:
+            raise HTTPException(409, 'Unknown response mode')
+        if mode == 'automatic' and os.environ.get('TOOLKIT_INSTANCE_MODE') != 'container':
+            raise HTTPException(409, 'Automatic replies require the community container')
         options = {key: value[key] for key in ('enabled', 'email_enabled') if key in value}
         if mode is not None:
-            if 'enabled' in options and options['enabled'] != (mode == 'draft'):
+            if 'enabled' in options and options['enabled'] != (mode != 'paused'):
                 raise HTTPException(400, 'Conflicting enabled and response mode settings')
-            options.update(enabled=mode == 'draft', shadow=True)
+            options.update(enabled=mode != 'paused', shadow=mode != 'automatic')
         if not options:
             raise HTTPException(400, 'Choose a setting to change')
         def save():

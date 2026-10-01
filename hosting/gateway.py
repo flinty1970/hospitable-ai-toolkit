@@ -124,7 +124,7 @@ def deliver(inbox, account, row, expected_property=None, controls=None):
         property_id = resolve_property(account, payload)
         if expected_property and property_id != expected_property:
             raise Unresolved("Property changed during dispatch; operator review required")
-        if controls and controls.effective(row["account"], account, property_id)["mode"] != "shadow":
+        if controls and controls.effective(row["account"], account, property_id)["mode"] not in {"shadow", "automatic"}:
             inbox.update(row["id"], "pending", property_id, "Processing paused by account/property controls", retry=True)
             return
         prop = account["properties"][property_id]

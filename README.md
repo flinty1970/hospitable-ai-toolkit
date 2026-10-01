@@ -18,8 +18,7 @@ continues independently in [windsor-rag](https://github.com/flinty1970/windsor-r
 - Manual or optional daily ingestion inside the container, with atomic index generation changes.
 - Read-only application/configuration/secret mounts, non-root processes and loopback host ports.
 
-**Guest auto-send is unavailable.** Turning shadow off pauses processing with
-`live_unavailable`; it does not start sending. Ordinary drafts are for review.
+**Guest auto-send defaults off.** Community containers can send supported drafts only after both account and property response modes are explicitly set to Automatic replies, with tested owner email enabled. Ordinary draft mode does not send. Legacy deployments retain `live_unavailable` behavior.
 Heating has an opt-in flag but no controller. No direct PriceLabs integration exists.
 
 ## Storage
@@ -135,7 +134,7 @@ without a restart policy requires an operator restart instead.
 Account/property **Draft only / Paused** controls persist immediately in the
 existing controls database and are audited. Account pause overrides property
 settings. Resuming wakes pending inbox events; old review events are not replayed.
-Automatic replies remain unavailable and cannot be enabled by the menu/API.
+Automatic replies require explicit enablement at account and property level and a tested owner email connection.
 Email alert switches use existing owner configuration; enabling
 an unconfigured alert channel is rejected. Changing
 timezones/indexing schedules, guest-draft review, and account OAuth login
@@ -283,7 +282,7 @@ data and verify restoration into a separate directory. Then restart the account.
 Rollback uses the previous image against compatible current state. Schema version
 1 is recorded; incompatible versions refuse the directory. Database migrations
 must remain backward compatible or require a planned data restore. Restoring an
-old delivery ledger can duplicate alerts; there are no automatic guest sends here.
+old delivery ledgers can duplicate alerts or guest replies. Preserve both event history and the guest-send ledger; pausing sending before restoring an older backup is required.
 Deleting a container does not delete bind mounts; do not delete the host directory.
 
 ## Validation and remaining work
@@ -298,8 +297,7 @@ It does not validate real guest generation or a user's SMTP/HA deployment.
 
 Before real user onboarding: stage real payloads and knowledge, confirm signing,
 add missed-event reconciliation, guest-draft review UI, retention/deletion policy and operational
-monitoring. Live guest sending, schedules, heating and self-service OAuth onboarding
-require separate implementation and validation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
+monitoring. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Schedules, heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
 by publishing this repository.
 
 ### AI provider and model settings
@@ -308,7 +306,7 @@ In `/settings`, choose Anthropic (Claude), OpenAI, xAI (Grok), or Google (Gemini
 
 The saved provider/model applies account-wide to the next draft, with no restart. Existing Claude configuration remains the fallback until a selection is saved. An empty setup can start without a model key; configure AI before enabling drafts. Existing environment keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `GEMINI_API_KEY`) can be reused; leave the key input blank to retain an available key. Switching providers never reuses a different provider's key.
 
-Browser-entered keys persist in `data/state/ai-settings.json` with mode 600, separate from the secret-free registry and the read-only installation credentials file. Treat data backups as credential backups. Keys are never returned by the settings API; the browser password field is cleared after saving/disconnecting. Enter keys over HTTPS or a trusted SSH tunnel. Changing AI providers sends future draft context to the chosen provider. API/model failures remain human-review events; automatic guest sending is still unavailable.
+Browser-entered keys persist in `data/state/ai-settings.json` with mode 600, separate from the secret-free registry and the read-only installation credentials file. Treat data backups as credential backups. Keys are never returned by the settings API; the browser password field is cleared after saving/disconnecting. Enter keys over HTTPS or a trusted SSH tunnel. Changing AI providers sends future draft context to the chosen provider. API/model failures remain human-review events; automatic guest sending still requires explicit account and property enablement.
 
 ### Browser email setup
 
@@ -318,4 +316,12 @@ Saved browser settings override installer msmtp delivery configuration for this 
 
 ### Account and channel display
 
-Use **Refresh name and connected channels from Hospitable** to fetch properties with `user,listings` included. The account display name uses the returned user name when available and can be edited; the internal account ID/data folder stays fixed. Property cards use Hospitable's internal property name/nickname before the public listing title. Listing-read permission is required for channels. API markup values are shown only when explicitly present; missing values are labelled unavailable, and numeric values without units are labelled as such. No markups or prices are changed. Real-account response schemas and scope access still require staging validation.
+Use **Refresh name and connected channels from Hospitable** to fetch the authenticated `/user` profile and properties with listings included. The account display name uses the returned company/name when available and can be edited; the internal account ID/data folder stays fixed. Property cards use Hospitable's internal property name/nickname before the public listing title. Listing-read permission is required for channels. API markup values are shown only when explicitly present; missing values are labelled unavailable, and numeric values without units are labelled as such. No markups or prices are changed. Real-account response schemas and scope access still require staging validation.
+
+### Automatic guest replies
+
+Community containers provide **Automatic replies / Draft only / Paused** at account and property level. Both account and property must be enabled and explicitly set to automatic; switching the account to draft prevents all property sends without changing their saved choices. Pause overrides sending and drafting. Existing config with `shadow: false` does not itself opt in: enablement timestamps are required. Saved/tested owner SMTP and enabled email alerts are required. Settings are audited and persist across restarts.
+
+Only new guest messages with timezone-aware `created_at`, received after the most recent global/property enablement and less than ten minutes old, qualify. Before sending, the worker independently resolves account/property ownership, fetches the message thread and confirms the event is still the latest guest message. Unconfirmed or paginated conversation data, a newer host/guest response, old pending events, incidents/host decisions, missing facts and invalid model outputs require human review. Full API message shape and channel sending permissions must be verified in staging.
+
+The worker stores `send_pending` before attempting a guest reply and an account-wide attempt ledger before the HTTP call. Sends have no automatic POST retry. Duplicate deliveries, crashes and timeouts never blindly resend; uncertain outcomes alert the owner to inspect the conversation. Rate guards allow at most two attempts per thread per minute and fifty per account per five minutes. API acceptance is recorded as sent; it is not proof of downstream channel delivery. A request already in flight cannot be recalled by changing a switch. AI-generated source grounding remains an imperfect control; validate drafts in shadow mode before opting in.

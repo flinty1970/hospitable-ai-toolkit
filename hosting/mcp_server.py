@@ -64,7 +64,7 @@ def create_server():
     def set_settings(account_id: str, property_id: str | None = None,
                      enabled: bool | None = None, shadow: bool | None = None,
                      email_enabled: bool | None = None) -> dict:
-        """Change authorized enabled/shadow settings. No guest sending is enabled."""
+        """Change authorized processing settings. Community containers require explicit account and property automatic modes plus tested owner email to send."""
         return tools.set_settings(token(), account_id, property_id, enabled, shadow, email_enabled=email_enabled)
 
     @mcp.tool()

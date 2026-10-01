@@ -22,6 +22,9 @@ class Controls:
                 for column in ("ha_enabled", "email_enabled", "heating_enabled", "ha_alerts_enabled"):
                     if column not in columns:
                         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
+            for table in ('controls','control_audit'):
+                if 'auto_enabled_at' not in {row[1] for row in db.execute(f'PRAGMA table_info({table})')}:
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN auto_enabled_at REAL')
         os.chmod(self.path, 0o600)
 
     def connect(self):
@@ -39,11 +42,12 @@ class Controls:
         result["heating_enabled"] = integration.get("heating_enabled", bool(property_id))
         result["ha_alerts_enabled"] = notifications.get("ha", {}).get("enabled", bool(property_id))
         with self.connect() as db:
-            row = db.execute("SELECT enabled,shadow,ha_enabled,email_enabled,heating_enabled,ha_alerts_enabled FROM controls WHERE account=? AND property=?", (account_id, property_id or "")).fetchone()
+            row = db.execute("SELECT enabled,shadow,ha_enabled,email_enabled,heating_enabled,ha_alerts_enabled,auto_enabled_at FROM controls WHERE account=? AND property=?", (account_id, property_id or "")).fetchone()
         if row:
             for key in result:
                 if row[key] is not None:
                     result[key] = bool(row[key])
+        result['auto_enabled_at'] = (row['auto_enabled_at'] or 0) if row else 0
         return result
 
     def set(self, actor, account_id, property_id=None, enabled=None, shadow=None, ha_enabled=None, email_enabled=None, heating_enabled=None, ha_alerts_enabled=None):
@@ -65,6 +69,8 @@ class Controls:
                 heating_enabled=COALESCE(excluded.heating_enabled,controls.heating_enabled),
                 ha_alerts_enabled=COALESCE(excluded.ha_alerts_enabled,controls.ha_alerts_enabled)""",
                 (account_id, property_id or "", enabled, shadow, ha_enabled, email_enabled, heating_enabled, ha_alerts_enabled))
+            if shadow is not None:
+                db.execute('UPDATE controls SET auto_enabled_at=? WHERE account=? AND property=?', (time.time() if shadow is False else 0, account_id, property_id or ''))
             db.execute("INSERT INTO control_audit(at,actor,account,property,enabled,shadow,ha_enabled,email_enabled,heating_enabled,ha_alerts_enabled) VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (time.time(), actor, account_id, property_id or "", enabled, shadow, ha_enabled, email_enabled, heating_enabled, ha_alerts_enabled))
 
@@ -72,16 +78,18 @@ class Controls:
         parent = self.get(account_id, None, account)
         child = self.get(account_id, property_id, account["properties"][property_id]) if property_id else None
         enabled = parent["enabled"] and (child is None or child["enabled"])
+        community = os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container'
         shadow = parent["shadow"] or (child is not None and child["shadow"])
+        if community and (not parent.get('auto_enabled_at') or (child is not None and not child.get('auto_enabled_at'))):
+            shadow = True
         result = {"account": parent, "property": child, "enabled": enabled, "shadow": shadow,
-                  "mode": "disabled" if not enabled else "shadow" if shadow else "live_unavailable",
-                  "live_sending_available": False}
+                  "mode": "disabled" if not enabled else "shadow" if shadow else "automatic" if community else "live_unavailable",
+                  "live_sending_available": community, "auto_enabled_at": max(parent.get("auto_enabled_at") or 0, (child or {}).get("auto_enabled_at") or 0)}
         for channel in ("ha", "email"):
             result[channel + "_enabled"] = parent[channel + "_enabled"] and (child is None or child[channel + "_enabled"])
         result["heating_enabled"] = result["ha_enabled"] and parent["heating_enabled"] and (child is None or child["heating_enabled"])
         result["heating_available"] = False  # Existing local HA heating is outside this application.
         result["ha_alerts_enabled"] = result["ha_enabled"] and parent["ha_alerts_enabled"] and (child is None or child["ha_alerts_enabled"])
-        import os
         if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
             for scope in (parent, child, result):
                 if scope is not None:

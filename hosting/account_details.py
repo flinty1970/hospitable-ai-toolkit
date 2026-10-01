@@ -16,10 +16,20 @@ def read(root, aid):
 
 def refresh(root, aid, account):
     name=None;properties={}
+    profile=requests.get('https://public.api.hospitable.com/v2/user',
+        headers={'Authorization':'Bearer '+secret(account['api_key_env']),'Accept':'application/json'},timeout=20,allow_redirects=False)
+    if profile.status_code == 200:
+        owner=profile.json().get('data', {})
+        if isinstance(owner,dict):
+            candidate=owner.get('company') or owner.get('name')
+            if isinstance(candidate,str) and candidate.strip(): name=candidate[:200]
     for page in range(1,101):
         response=requests.get('https://public.api.hospitable.com/v2/properties',
-            params={'page':page,'per_page':50,'include':'user,listings'},
+            params={'page':page,'per_page':50,'include':'listings'},
             headers={'Authorization':'Bearer '+secret(account['api_key_env']),'Accept':'application/json'},timeout=20,allow_redirects=False)
+        if response.status_code in {400,403,422}:
+            response=requests.get('https://public.api.hospitable.com/v2/properties',
+                params={'page':page,'per_page':50},headers={'Authorization':'Bearer '+secret(account['api_key_env']),'Accept':'application/json'},timeout=20,allow_redirects=False)
         if response.status_code!=200: raise ValueError('Property/listing access unavailable')
         value=response.json();rows=value.get('data')
         if not isinstance(rows,list): raise ValueError('Unexpected property details')
@@ -28,7 +38,7 @@ def refresh(root, aid, account):
             if not isinstance(pid,str): continue
             user=row.get('user')
             if isinstance(user,dict) and isinstance(user.get('data'),dict): user=user['data']
-            if isinstance(user,dict) and isinstance(user.get('name'),str) and user['name'].strip(): name=user['name'][:200]
+            if not name and isinstance(user,dict) and isinstance(user.get('name'),str) and user['name'].strip(): name=user['name'][:200]
             listings=row.get('listings')
             if isinstance(listings,dict): listings=listings.get('data')
             channels=[]

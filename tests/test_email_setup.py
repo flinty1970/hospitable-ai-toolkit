@@ -67,6 +67,20 @@ class AccountDetailTests(unittest.TestCase):
             account_details.save_name(tmp,'owner','Business name')
             self.assertEqual(account_details.read(tmp,'owner')['name'],'Business name')
 
+    def test_direct_profile_lookup_and_nickname_without_listing_permission(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile=Mock(status_code=200);profile.json.return_value={'data':{'name':'Owner name','company':'Owner business','email':'private@example.com'}}
+            denied=Mock(status_code=403)
+            properties=Mock(status_code=200);properties.json.return_value={'data':[{'id':'p','name':'Internal nickname','public_name':'Public listing'}],'meta':{'last_page':1}}
+            with patch.dict(os.environ,{'HOSPITABLE_PAT':'secret'}),patch.object(account_details.requests,'get',side_effect=[profile,denied,properties]) as get:
+                account_details.refresh(tmp,'owner',{'api_key_env':'HOSPITABLE_PAT'})
+            self.assertTrue(get.call_args_list[0].args[0].endswith('/user'))
+            saved=account_details.read(tmp,'owner')
+            self.assertEqual(saved['name'],'Owner business')
+            self.assertEqual(saved['properties']['p']['nickname'],'Internal nickname')
+            self.assertFalse(saved['properties']['p']['available'])
+            self.assertNotIn('private@example.com',json.dumps(saved))
+
 class EmailAdminTests(unittest.TestCase):
     setUp=admin_test.AdminUITests.setUp
     make_client=admin_test.AdminUITests.make_client
@@ -86,3 +100,17 @@ class EmailAdminTests(unittest.TestCase):
             state=self.client.get('/admin/settings',headers=self.headers)
             self.assertNotIn('private-password',state.text)
             self.assertTrue(state.json()['smtp']['tested'])
+
+    def test_global_and_property_automatic_settings_persist(self):
+        value=dict(host='smtp.example.com',port=587,security='starttls',username='owner',password='password',sender='owner@example.com',recipient='review@example.com')
+        with patch.dict(os.environ,{'TOOLKIT_INSTANCE_MODE':'container','TOOLKIT_DATA_DIR':str(self.root)}):
+            self.assertEqual(self.post('controls',{'response_mode':'automatic'}).status_code,409)
+            self.post('smtp/save',value)
+            with patch.object(email,'send'):self.post('smtp/test',value)
+            self.assertEqual(self.post('controls',{'response_mode':'automatic'}).status_code,200)
+            self.assertEqual(self.post('controls',{'property_id':'alpha','response_mode':'automatic'}).json()['mode'],'automatic')
+            self.make_client()
+            self.assertEqual(self.client.get('/admin/settings',headers=self.headers).json()['properties'][0]['settings']['mode'],'automatic')
+            self.post('controls',{'response_mode':'draft'})
+            self.assertEqual(self.client.get('/admin/settings',headers=self.headers).json()['properties'][0]['settings']['mode'],'shadow')
+            self.assertFalse(self.client.get('/admin/settings',headers=self.headers).json()['properties'][0]['settings']['property']['shadow'])
