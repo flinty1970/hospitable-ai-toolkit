@@ -30,3 +30,8 @@ class ChannelMetadataTests(unittest.TestCase):
         row=properties['p']['channels'][0]
         self.assertEqual(row['markup'],'Markup not supplied by API')
         self.assertEqual(row['connection_status'],'Not confirmed by API')
+
+    def test_hide_sources_and_prefer_homeaway_evidence(self):
+        from hosting.account_details import display_channels
+        rows=[{'channel':p,'markup':m,'connection_status':c} for p,m,c in [('gvr','missing','unknown'),('manual','missing','unknown'),('vrbo','missing','unknown'),('homeaway','15% (API)','Connected account matched')]]
+        self.assertEqual(display_channels(rows),[{'channel':'Vrbo','markup':'15% (API)','connection_status':'Connected account matched'}])

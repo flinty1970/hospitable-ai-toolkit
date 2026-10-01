@@ -16,6 +16,20 @@ def read(root, aid):
     if value.get('account_id')!=aid: raise ValueError('Invalid display account')
     return value
 
+def display_channels(channels):
+    names={'airbnb':'Airbnb','agoda':'Agoda','booking':'Booking.com','direct':'Direct','homeaway':'Vrbo','vrbo':'Vrbo'}
+    # Hospitable reports its connected Vrbo account and markup as homeaway.
+    # Prefer that evidenced row over the additional unconfirmed vrbo record.
+    has_homeaway=any(row['channel']=='homeaway' for row in channels)
+    result=[]
+    for row in channels:
+        platform=row['channel']
+        if platform not in names or (platform=='vrbo' and has_homeaway): continue
+        result.append({**row,'channel':names[platform]})
+    order=['Airbnb','Agoda','Vrbo','Booking.com','Direct']
+    return sorted(result,key=lambda row:order.index(row['channel']))
+
+
 def enrich_channels(root, account, properties):
     headers={'Authorization':'Bearer '+secret(account['api_key_env']),'Accept':'application/json'}
     connected=set()
@@ -55,7 +69,7 @@ def enrich_channels(root, account, properties):
                     status='Connected account matched' if uid is not None and (platform,str(uid)) in connected else 'Not confirmed by API'
                     if listing.get('connected') is False: status='Disconnected'
                     channels.append({'channel':platform[:100],'markup':labels.get(platform,'Markup not supplied by API'),'connection_status':status})
-                properties[pid].update(channels=channels,available=True)
+                properties[pid].update(channels=display_channels(channels),available=True)
         except (requests.RequestException,ValueError):
             continue
 
