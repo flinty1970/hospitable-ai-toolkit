@@ -116,4 +116,11 @@ class NativeScheduleTests(unittest.TestCase):
         with patch.object(native,'call',side_effect=self.upstream),patch.object(native,'pat_user',return_value='another-account'):
             self.assertEqual(client.post('/admin/scheduled/connection',headers=headers,json={'test':True}).status_code,400)
 
+    def test_image_attachments_are_explicit_and_https_only(self):
+        url='https://images.example.com/photo.jpg'
+        self.assertEqual(native.image_attachments({'attachments':[{'url':url,'filename':'Photo'}, {'url':url}, {'url':'javascript:alert(1)','type':'image'}, {'url':'https://example.com/file.pdf'}, {'url':'http://example.com/a.png'}]}),[{'url':url,'name':'Photo'}])
+        self.assertEqual(native.image_attachments({'message':url}),[])
+        self.assertEqual(native.image_attachments({'attachments':{'data':[{'url':'https://example.com/signed?id=1','mime_type':'image/png'}]}})[0]['url'],'https://example.com/signed?id=1')
+
+
 if __name__=='__main__':unittest.main()
