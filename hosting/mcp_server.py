@@ -63,10 +63,9 @@ def create_server():
     @mcp.tool()
     def set_settings(account_id: str, property_id: str | None = None,
                      enabled: bool | None = None, shadow: bool | None = None,
-                     ha_enabled: bool | None = None, email_enabled: bool | None = None,
-                     heating_enabled: bool | None = None, ha_alerts_enabled: bool | None = None) -> dict:
+                     email_enabled: bool | None = None) -> dict:
         """Change authorized enabled/shadow settings. No guest sending is enabled."""
-        return tools.set_settings(token(), account_id, property_id, enabled, shadow, ha_enabled, email_enabled, heating_enabled, ha_alerts_enabled)
+        return tools.set_settings(token(), account_id, property_id, enabled, shadow, email_enabled=email_enabled)
 
     @mcp.tool()
     def search_knowledge(account_id: str, property_id: str, query: str) -> list[dict]:

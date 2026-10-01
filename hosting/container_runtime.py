@@ -66,7 +66,8 @@ def prepare(data_root=None, secrets_root=None):
         raise ValueError("Property directory must not be a symlink")
     credentials = read_credentials(Path(secrets_root or os.environ.get("TOOLKIT_SECRETS_DIR", "/run/toolkit-secrets")) / "credentials.env")
     bootstrap_key = account.get("model_key_env", "ANTHROPIC_API_KEY")
-    references = {bootstrap_key, account.get("api_key_env", "HOSPITABLE_PAT"), account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET"), "TOOLKIT_ADMIN_SECRET"}
+    from hosting.ai_service import PROVIDERS
+    references = {v["env"] for v in PROVIDERS.values()} | {bootstrap_key, account.get("api_key_env", "HOSPITABLE_PAT"), account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET"), "TOOLKIT_ADMIN_SECRET"}
     account = {**account, "api_key_env": account.get("api_key_env", "HOSPITABLE_PAT"), "webhook_secret_env": account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET")}
     ports = []
     for number, (pid, prop) in enumerate(account["properties"].items()):
@@ -96,9 +97,7 @@ def prepare(data_root=None, secrets_root=None):
     if mcp.get("enabled", False):
         clients = json.loads((root / "config/mcp_clients.json").read_text())["clients"]
         references.update(client["token_env"] for client in clients.values())
-    required = {account["api_key_env"], account["webhook_secret_env"], "TOOLKIT_ADMIN_SECRET"} | {prop["model_key_env"] for prop in account["properties"].values()}
-    if not account["properties"]:
-        required.add(bootstrap_key)
+    required = {account["api_key_env"], account["webhook_secret_env"], "TOOLKIT_ADMIN_SECRET"}
     if not required <= set(credentials):
         raise ValueError("Required account credentials are missing")
     if set(credentials) - references:
@@ -108,7 +107,7 @@ def prepare(data_root=None, secrets_root=None):
     registry = state / "runtime-registry.json"
     registry.write_text(json.dumps({"accounts": {account_id: account}}))
     registry.chmod(0o600)
-    os.environ.update({"TOOLKIT_INSTANCE_MODE": "container", "TOOLKIT_DATA_DIR": str(root), "TOOLKIT_ACCOUNTS_FILE": str(registry), "TOOLKIT_CONTROLS_DB": str(state / "controls.sqlite3"), "TOOLKIT_INBOX_DB": str(state / "inbox.sqlite3"), "HF_HOME": str(root / "model-cache"), "SENTENCE_TRANSFORMERS_HOME": str(root / "model-cache"), "TOOLKIT_MCP_ENABLED": "true" if mcp.get("enabled", False) else "false"})
+    os.environ.update({"TOOLKIT_ACCOUNT_ID": account_id, "TOOLKIT_INSTANCE_MODE": "container", "TOOLKIT_DATA_DIR": str(root), "TOOLKIT_ACCOUNTS_FILE": str(registry), "TOOLKIT_CONTROLS_DB": str(state / "controls.sqlite3"), "TOOLKIT_INBOX_DB": str(state / "inbox.sqlite3"), "HF_HOME": str(root / "model-cache"), "SENTENCE_TRANSFORMERS_HOME": str(root / "model-cache"), "TOOLKIT_MCP_ENABLED": "true" if mcp.get("enabled", False) else "false"})
     if mcp.get("enabled", False):
         os.environ.update({"TOOLKIT_MCP_CLIENTS_FILE": str(root / "config/mcp_clients.json"), "TOOLKIT_MCP_RESOURCE_URL": mcp["resource_url"], "TOOLKIT_MCP_ISSUER_URL": mcp["issuer_url"]})
     from hosting.config import load_registry

@@ -45,14 +45,11 @@ def prepare_draft(prop, message):
     references = retrieve_references(prop, message)
     if not references:
         return {"action": "review", "answer": "", "reason": "Property index is empty or not ready"}
-    from anthropic import Anthropic
-    result = Anthropic(api_key=secret(prop["model_key_env"]), timeout=60, max_retries=1).messages.create(
-        model=prop.get("model", "claude-sonnet-4-6"), max_tokens=600,
-        system=SYSTEM, messages=[{"role": "user", "content": json.dumps({
-            "property_name": prop["name"], "guest_message": message,
-            "references": references,
-        })}])
-    text = "".join(block.text for block in result.content if getattr(block, "type", None) == "text")
+    from hosting.ai_service import draft_text
+    text = draft_text(prop, SYSTEM, json.dumps({
+        "property_name": prop["name"], "guest_message": message,
+        "references": references,
+    }))
     answer = json.loads(text)
     if (not isinstance(answer, dict) or answer.get("action") not in {"draft", "review"}
             or not isinstance(answer.get("answer"), str) or not isinstance(answer.get("reason"), str)):

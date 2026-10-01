@@ -98,7 +98,7 @@ Edit the copied files **before startup**:
    `secrets/credentials.env`; this file is parsed as literal assignments, not shell code.
 4. Set this owner's SMTP server, user, password and sender in `msmtprc`, and real
    sender/recipients in `account.json`. Email defaults on in the example, HA off.
-5. Add only credentials referenced by this instance. Do not copy Windsor's complete
+5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy Windsor's complete
    `/etc/*.env` files; they contain unrelated credentials and settings.
 
 No setup command alters Windsor, Caddy or Hospitable's configured webhook.
@@ -122,6 +122,8 @@ account's PAT. Select properties and import them; membership is verified again
 server-side against the account API. No guest documents or reservations are
 imported by discovery. Properties absent from the account API cannot be imported.
 
+Hospitable may return a fixed UTC offset instead of an IANA timezone. Existing properties keep their configured timezone; new imports with an offset require a timezone choice such as `Europe/London` so daylight-saving changes work correctly.
+
 Selections persist in `data/state/property-selection.json`, separate from the
 read-only configuration. Imports add to the configured properties and never
 delete existing folders or knowledge. Click the restart button to apply them;
@@ -134,9 +136,9 @@ Account/property **Draft only / Paused** controls persist immediately in the
 existing controls database and are audited. Account pause overrides property
 settings. Resuming wakes pending inbox events; old review events are not replayed.
 Automatic replies remain unavailable and cannot be enabled by the menu/API.
-Email and optional HA alert switches use existing owner configuration; enabling
+Email alert switches use existing owner configuration; enabling
 an unconfigured alert channel is rejected. Setting up SMTP credentials, changing
-models/timezones/indexing schedules, guest-draft review, and account OAuth login
+timezones/indexing schedules, guest-draft review, and account OAuth login
 still require separate configuration or future UI work.
 
 Use `/documents` for each property's PDF review and index update. Both interfaces
@@ -297,5 +299,13 @@ It does not validate real guest generation or a user's SMTP/HA deployment.
 Before real user onboarding: stage real payloads and knowledge, confirm signing,
 add missed-event reconciliation, guest-draft review UI, retention/deletion policy and operational
 monitoring. Live guest sending, schedules, heating and self-service OAuth onboarding
-require separate implementation and validation. There is no deployment to AI implied
+require separate implementation and validation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
 by publishing this repository.
+
+### AI provider and model settings
+
+In `/settings`, choose Anthropic (Claude), OpenAI, xAI (Grok), or Google (Gemini), enter the provider API key and load its available models. Choose a text model (or enter its exact API model ID), then **Test connection** and **Save AI settings**. The test makes a small billable request with no guest/property data. Model lists can include models unsuitable for text drafts; a successful connection test is required to establish compatibility for your choice. Chat service subscriptions are separate from API access/billing.
+
+The saved provider/model applies account-wide to the next draft, with no restart. Existing Claude configuration remains the fallback until a selection is saved. An empty setup can start without a model key; configure AI before enabling drafts. Existing environment keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `GEMINI_API_KEY`) can be reused; leave the key input blank to retain an available key. Switching providers never reuses a different provider's key.
+
+Browser-entered keys persist in `data/state/ai-settings.json` with mode 600, separate from the secret-free registry and the read-only installation credentials file. Treat data backups as credential backups. Keys are never returned by the settings API; the browser password field is cleared after saving/disconnecting. Enter keys over HTTPS or a trusted SSH tunnel. Changing AI providers sends future draft context to the chosen provider. API/model failures remain human-review events; automatic guest sending is still unavailable.

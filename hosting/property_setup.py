@@ -8,6 +8,10 @@ import requests
 from hosting.config import secret
 from hosting.pdf_ingestion import write_atomic
 
+class DiscoveryError(ValueError):
+    """Safe messages containing no API payloads or credentials."""
+
+
 SAFE_ID = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}')
 
 
@@ -20,23 +24,34 @@ def discovery(account, get=None):
             headers={'Authorization': 'Bearer ' + secret(account.get('api_key_env', 'HOSPITABLE_PAT')), 'Accept': 'application/json'},
             timeout=20, allow_redirects=False)
         if response.status_code != 200:
-            raise ValueError('Hospitable property discovery failed; check PAT permissions or retry later')
+            raise DiscoveryError('Hospitable could not list properties; check PAT permissions or retry later')
         payload = response.json()
         rows = payload.get('data')
         if not isinstance(rows, list):
-            raise ValueError('Unexpected Hospitable property response')
+            raise DiscoveryError('Hospitable returned an unexpected property list')
         previous = len(properties)
         for row in rows:
             if not isinstance(row, dict):
-                raise ValueError('Unexpected Hospitable property record')
+                raise DiscoveryError('Hospitable returned an unexpected property record')
             pid = row.get('id') or row.get('uuid')
             if not isinstance(pid, str) or not SAFE_ID.fullmatch(pid):
-                raise ValueError('Invalid Hospitable property ID')
+                raise DiscoveryError('Hospitable returned an unsupported property ID')
             name = row.get('name') or row.get('public_name') or pid
             timezone = row.get('timezone') or 'UTC'
             if not isinstance(name, str) or len(name) > 500 or not isinstance(timezone, str):
-                raise ValueError('Invalid property name or timezone')
-            ZoneInfo(timezone)
+                raise DiscoveryError('Hospitable returned an unsupported property name or timezone')
+            try:
+                ZoneInfo(timezone)
+            except (ValueError, KeyError):
+                configured = account.get('properties', {}).get(pid, {}).get('timezone')
+                if configured:
+                    ZoneInfo(configured)
+                    timezone = configured
+                elif re.fullmatch(r'[+-]\d{2}:?\d{2}', timezone):
+                    properties[pid] = {'name': name, 'timezone': None, 'timezone_required': True}
+                    continue
+                else:
+                    raise DiscoveryError('Hospitable returned an unrecognised timezone. Check the property timezone in Hospitable.')
             properties[pid] = {'name': name, 'timezone': timezone}
         meta = payload.get('meta') or {}
         last = meta.get('last_page')

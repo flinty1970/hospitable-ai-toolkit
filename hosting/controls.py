@@ -81,6 +81,12 @@ class Controls:
         result["heating_enabled"] = result["ha_enabled"] and parent["heating_enabled"] and (child is None or child["heating_enabled"])
         result["heating_available"] = False  # Existing local HA heating is outside this application.
         result["ha_alerts_enabled"] = result["ha_enabled"] and parent["ha_alerts_enabled"] and (child is None or child["ha_alerts_enabled"])
+        import os
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+            for scope in (parent, child, result):
+                if scope is not None:
+                    for key in ('ha_enabled', 'ha_alerts_enabled', 'heating_enabled'):
+                        scope[key] = False
         return result
 
 

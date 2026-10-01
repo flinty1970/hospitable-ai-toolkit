@@ -58,6 +58,17 @@ class ContainerTests(unittest.TestCase):
         _, account, _ = self.start()
         self.assertEqual(controls.effective('owner-a', account, 'imported')['mode'], 'shadow')
 
+    def test_first_run_without_ai_key_and_provider_environment_keys(self):
+        self.credentials.write_text("HOSPITABLE_PAT=account-key\nHOSPITABLE_WEBHOOK_SECRET=hook-key\nTOOLKIT_ADMIN_SECRET=admin-key\nOPENAI_API_KEY=openai-key\n")
+        _, account, _ = self.start()
+        self.assertEqual(os.environ['TOOLKIT_ACCOUNT_ID'], 'owner-a')
+        self.assertEqual(os.environ['OPENAI_API_KEY'], 'openai-key')
+        from hosting.ai_service import save_settings, draft_text
+        save_settings(self.data, 'owner-a', 'openai', 'gpt-test')
+        with patch('hosting.ai_service.generate', return_value='{}') as generate:
+            draft_text(next(iter(account['properties'].values())), 'rules', 'message')
+            self.assertEqual(generate.call_args.args[:3], ('openai', 'gpt-test', 'openai-key'))
+
     def test_one_account_two_properties_have_separate_mounted_data(self):
         aid, account, ports = self.start()
         self.assertEqual(aid, "owner-a")

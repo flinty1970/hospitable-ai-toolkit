@@ -28,6 +28,9 @@ class HostedTools:
     def set_settings(self, token, account_id, property_id=None, enabled=None, shadow=None,
                      ha_enabled=None, email_enabled=None, heating_enabled=None, ha_alerts_enabled=None):
         actor = self.access.require(token, account_id, property_id, "settings")
+        import os
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container' and any(v is not None for v in (ha_enabled, heating_enabled, ha_alerts_enabled)):
+            raise ValueError('Home Assistant is not part of the community toolkit')
         from hosting.notifications import validate_channel
         account = self.accounts[account_id]
         for channel, value in (("ha", ha_alerts_enabled), ("email", email_enabled)):

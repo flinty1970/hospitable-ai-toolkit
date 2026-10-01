@@ -100,3 +100,36 @@ class AdminUITests(unittest.TestCase):
         response.json.return_value = {'data': [{'id': '../escape', 'name': 'x'}]}
         with self.assertRaises(ValueError):
             discovery(self.account, Mock(return_value=response))
+
+    def test_invalid_timezone_has_specific_safe_error(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {'data':[{'id':'unimported','name':'Private property','timezone':'unsupported-timezone'}], 'meta':{'last_page':1}}
+        with patch('hosting.property_setup.requests.get', return_value=response):
+            result = self.post('discover', {})
+        self.assertEqual(result.status_code, 400)
+        self.assertIn('timezone', result.json()['detail'])
+        self.assertNotIn('Private property', result.text)
+        self.assertNotIn('private-pat', result.text)
+
+    def test_hospitable_offsets_preserve_existing_timezone_or_require_choice(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {'data':[{'id':'alpha','name':'Alpha','timezone':'+0100'}, {'id':'beta','name':'Beta','timezone':'-0400'}], 'meta':{'last_page':1}}
+        with patch('hosting.property_setup.requests.get', return_value=response):
+            result = self.post('discover', {}).json()['properties']
+            self.assertEqual(result[0]['timezone'], 'UTC')
+            self.assertTrue(result[1]['timezone_required'])
+            self.assertEqual(self.post('import', {'property_ids':['beta']}).status_code, 400)
+            self.assertEqual(self.post('import', {'property_ids':['beta'],'timezones':{'beta':'America/New_York'}}).status_code, 200)
+        self.assertEqual(read_selection(self.root, 'owner')['beta']['timezone'], 'America/New_York')
+
+    def test_community_admin_rejects_home_assistant_controls(self):
+        self.assertEqual(self.post('controls', {'ha_enabled':True}).status_code, 400)
+        self.assertEqual(self.post('controls', {'ha_alerts_enabled':True}).status_code, 400)
+        self.assertNotIn('Home Assistant integration', self.client.get('/settings').text)
+        self.account['home_assistant'] = {'enabled':True, 'heating_enabled':True}
+        self.account['notifications']['ha']['enabled'] = True
+        with patch.dict(os.environ, {'TOOLKIT_INSTANCE_MODE':'container'}):
+            effective = Controls(self.root / 'state/controls.sqlite3').effective('owner', self.account)
+            self.assertFalse(effective['ha_enabled'])
+            self.assertFalse(effective['ha_alerts_enabled'])
+            self.assertFalse(effective['heating_enabled'])

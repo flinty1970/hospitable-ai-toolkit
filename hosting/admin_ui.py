@@ -7,10 +7,11 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 from hosting.controls import Controls, control_path
+from hosting.ai_service import public_settings
 from hosting.document_ui import authorize
 from hosting.indexing import index_lock
 from hosting.pdf_ingestion import write_atomic
-from hosting.property_setup import discovery, read_selection, save_selection
+from hosting.property_setup import DiscoveryError, discovery, read_selection, save_selection
 
 
 def install(app, accounts, data_root=None):
@@ -40,8 +41,10 @@ def install(app, accounts, data_root=None):
                 return function()
             except HTTPException:
                 raise
+            except DiscoveryError as error:
+                raise HTTPException(400, str(error))
             except (ValueError, KeyError):
-                raise HTTPException(400, 'Unable to apply settings; check selection, notification configuration or PAT permissions.')
+                raise HTTPException(400, 'Unable to apply settings; check provider, model, API key/billing, selection or notification configuration.')
             except Exception:
                 raise HTTPException(502, 'Hospitable or settings unavailable; retry later. No credentials displayed.')
         return await asyncio.to_thread(run)
@@ -69,7 +72,7 @@ def install(app, accounts, data_root=None):
                     'settings': controls.effective(aid, account, pid)} for pid, prop in account['properties'].items()],
                 'pending_properties': [{'id': pid, **prop} for pid, prop in pending.items() if pid not in account['properties']],
                 'setup_required': not bool(account['properties']), 'auto_responses_available': False,
-                'heating_available': False}
+                'heating_available': False, 'ai': public_settings(root, aid, account)}
         return await task(snapshot)
 
     @app.post('/admin/settings/discover')
@@ -86,12 +89,27 @@ def install(app, accounts, data_root=None):
         authorize(request)
         value = await body(request)
         ids = value.get('property_ids')
+        timezones = value.get('timezones', {})
+        if not isinstance(timezones, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in timezones.items()):
+            raise HTTPException(400, 'Invalid property timezone choices')
         if not isinstance(ids, list) or not ids or len(ids) > 64 or any(not isinstance(pid, str) for pid in ids) or len(set(ids)) != len(ids):
             raise HTTPException(400, 'Select 1–64 distinct properties')
         def save():
             found = discovery(account)  # Verify again with this account's PAT; do not trust the browser.
             if not set(ids) <= set(found):
                 raise HTTPException(400, 'A selected property is not in this Hospitable account')
+            if set(timezones) - set(ids):
+                raise HTTPException(400, 'Timezone choices must belong to selected properties')
+            from zoneinfo import ZoneInfo
+            for pid in ids:
+                timezone = timezones.get(pid) or found[pid].get('timezone')
+                if not timezone:
+                    raise HTTPException(400, 'Choose an IANA timezone for each selected property, such as Europe/London')
+                try:
+                    ZoneInfo(timezone)
+                except (ValueError, KeyError):
+                    raise HTTPException(400, 'Unrecognised timezone; use an IANA name such as Europe/London')
+                found[pid] = {'name': found[pid]['name'], 'timezone': timezone}
             with index_lock(root, True, 'property-selection.lock'):
                 selected = read_selection(root, aid)
                 folders = {prop.get('folder', pid): pid for pid, prop in account['properties'].items()}
@@ -122,7 +140,7 @@ def install(app, accounts, data_root=None):
     async def update_controls(request: Request):
         authorize(request)
         value = await body(request)
-        allowed = {'property_id', 'enabled', 'response_mode', 'email_enabled', 'ha_enabled', 'ha_alerts_enabled'}
+        allowed = {'property_id', 'enabled', 'response_mode', 'email_enabled'}
         if set(value) - allowed:
             raise HTTPException(400, 'Unsupported setting')
         pid = value.get('property_id')
@@ -131,7 +149,7 @@ def install(app, accounts, data_root=None):
         mode = value.get('response_mode')
         if mode is not None and mode not in {'draft', 'paused'}:
             raise HTTPException(409, 'Automatic guest responses are not implemented')
-        options = {key: value[key] for key in ('enabled', 'email_enabled', 'ha_enabled', 'ha_alerts_enabled') if key in value}
+        options = {key: value[key] for key in ('enabled', 'email_enabled') if key in value}
         if mode is not None:
             if 'enabled' in options and options['enabled'] != (mode == 'draft'):
                 raise HTTPException(400, 'Conflicting enabled and response mode settings')
@@ -140,7 +158,7 @@ def install(app, accounts, data_root=None):
             raise HTTPException(400, 'Choose a setting to change')
         def save():
             from hosting.notifications import validate_channel
-            for channel, key in (('email', 'email_enabled'), ('ha', 'ha_alerts_enabled')):
+            for channel, key in (('email', 'email_enabled'),):
                 if options.get(key) is True:
                     validate_channel(account, pid, channel)
             controls.set('admin-ui', aid, pid, **options)
@@ -154,3 +172,27 @@ def install(app, accounts, data_root=None):
                             db.execute("UPDATE inbox SET next_attempt=0 WHERE account=? AND state='pending'", (aid,))
             return controls.effective(aid, account, pid)
         return await task(save)
+
+    @app.post('/admin/settings/ai/{operation}')
+    async def ai_settings(operation: str, request: Request):
+        authorize(request)
+        if operation not in {'models', 'test', 'save'}:
+            raise HTTPException(404, 'Unknown AI operation')
+        value = await body(request)
+        if set(value) - {'provider', 'model', 'api_key'}:
+            raise HTTPException(400, 'Unsupported AI setting')
+        from hosting.ai_service import validate, read_settings, key_for, list_models, test_connection, save_settings
+        provider = value.get('provider')
+        model = value.get('model')
+        supplied = value.get('api_key') or None
+        def apply():
+            validate(provider, model, supplied)
+            if operation != 'models' and model is None:
+                raise HTTPException(400, 'Choose a model')
+            if operation == 'save':
+                return save_settings(root, aid, provider, model, supplied)
+            key = key_for(read_settings(root, aid), provider, supplied)
+            if operation == 'models':
+                return {'models': list_models(provider, key)}
+            return test_connection(provider, model, key)
+        return await task(apply)
