@@ -78,6 +78,34 @@ class MessageFlowTests(unittest.TestCase):
         item=Operations(self.root,'a',self.account).items()[0]
         self.assertEqual(item['state'],'review'); self.assertEqual(item['answer'],'')
 
+
+    def test_resolved_supply_no_owner_alert_or_guest_send(self):
+        self.event['data']['body'] = "Hi Martin,\n\nThanks so much! We found enough in the garage to last us, so no need to send more. Appreciate your help!\n\nOi Ying"
+        for automatic in (False, True):
+            with self.subTest(automatic=automatic):
+                self.event['data']['id'] = 'resolved-supply-' + str(automatic)
+                if automatic:
+                    self.controls.set('test', 'a', shadow=False)
+                    self.controls.set('test', 'a', 'property-a', shadow=False)
+                with patch('hosting.notifications.Outbox.enqueue') as enqueue:
+                    self.assertEqual(self.dispatch(), [])
+                    enqueue.assert_not_called()
+                self.assertEqual(Operations(self.root, 'a', self.account).items(), [])
+
+    def test_supply_requests_and_mixed_messages_remain_reviewable(self):
+        for message in (
+            'We need toilet rolls and paper towels.',
+            'We found enough toilet rolls. But we need paper towels.',
+            'We found enough toilet rolls. There is a gas leak.',
+            'We found enough toilet rolls. Can we extend our stay?',
+            'We do not have enough toilet rolls.',
+        ):
+            with self.subTest(message=message), patch('hosting.worker.retrieve_references') as retrieve:
+                result = worker.prepare_draft({}, message)
+                self.assertEqual(result['action'], 'review')
+                self.assertEqual(result['answer'], '')
+                retrieve.assert_not_called()
+
     def test_paused_gateway_keeps_event_pending(self):
         self.controls.set('test','a',enabled=False)
         self.assertEqual(self.dispatch(),[])
