@@ -120,7 +120,30 @@ ingestion extract new text-based PDFs into `document-review/` as Markdown, with
 page headings and source fingerprints. They never enter the guest index until
 you review/edit them and explicitly approve them into `docs/`. Installer
 instructions, access codes and private information must be removed during review.
-A document-conversion/review UI is not implemented.
+The browser document interface is at `/documents` on the toolkit port. Sign in
+with `TOOLKIT_ADMIN_SECRET`, choose the property, upload a PDF, review/edit its
+Markdown, save, confirm it is guest-safe, approve, then click **Update property
+knowledge**. Tokens stay in page memory, never URLs or browser storage. A reload
+or disconnect requires signing in again. Review text is shown as plain text;
+PDF/Markdown content is never executed as HTML.
+
+For a remote trial, forward the loopback port from your own computer:
+
+```bash
+ssh -N -L 8790:127.0.0.1:8790 mflint@YOUR_AI_SERVER
+```
+
+Then open `http://127.0.0.1:8790/documents` on that computer. Obtain the admin token
+locally from the instance credentials file; never share it in chat. The existing
+Caddy example deliberately does not expose admin routes. Keep it that way for
+this trial. A public owner portal needs separate HTTPS/access configuration.
+
+Uploads are limited to 50 MB and selected properties. Existing source filenames
+are not overwritten; rename an updated PDF before uploading. Approval only copies
+saved text into curated knowledge. The separate index update publishes atomically;
+a failed update keeps the previous index. Requests show completion/error status;
+there is no durable background-job UI, so keep the page open during conversion
+and indexing. CLI commands below remain available.
 
 ```bash
 docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one exec toolkit python -m hosting.cli convert-pdfs <property-uuid>
@@ -237,7 +260,7 @@ and a real embedding/index/query against dummy curated property facts.
 It does not validate real guest generation or a user's SMTP/HA deployment.
 
 Before real user onboarding: stage real payloads and knowledge, confirm signing,
-add missed-event reconciliation, review UI, retention/deletion policy and operational
+add missed-event reconciliation, guest-draft review UI, retention/deletion policy and operational
 monitoring. Live guest sending, schedules, heating and self-service OAuth onboarding
 require separate implementation and validation. There is no deployment to AI implied
 by publishing this repository.

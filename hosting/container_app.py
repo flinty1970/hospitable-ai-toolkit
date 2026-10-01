@@ -29,6 +29,9 @@ def create_app():
             raise HTTPException(503, "Property worker unavailable")
         return {"ok": True}
 
+    from hosting.document_ui import install
+    install(app, accounts)
+
     if os.environ.get("TOOLKIT_MCP_ENABLED") == "true":
         from hosting.mcp_server import create_app as mcp_app
         mcp = mcp_app()
