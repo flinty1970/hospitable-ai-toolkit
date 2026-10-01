@@ -1,5 +1,6 @@
 """Persistent manually authored reservation messages; no uncertain-send retries."""
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -70,6 +71,9 @@ def local_due(value,zone,fold=None):
     if matching[0]<=time.time():raise ValueError('Scheduled time must be in the future')
     return matching[0]
 
+def message_revision(row):
+    return hashlib.sha256(json.dumps({k:row[k] for k in ('id','due','body','state')},sort_keys=True).encode()).hexdigest()
+
 class Queue:
     def __init__(self,root,aid,account):
         self.root=Path(root);self.aid=aid;self.account=account
@@ -83,7 +87,9 @@ class Queue:
     def list(self,pid):
         if pid not in self.account['properties']:raise ValueError('Unknown property')
         with self.connect() as db:rows=[dict(r) for r in db.execute('SELECT * FROM scheduled WHERE account=? AND property=? ORDER BY due DESC LIMIT 200',(self.aid,pid))]
-        for row in rows:row['local_time']=datetime.fromtimestamp(row['due'],ZoneInfo(row['timezone'])).isoformat()
+        for row in rows:
+            row['local_time']=datetime.fromtimestamp(row['due'],ZoneInfo(row['timezone'])).isoformat()
+            row['revision']=message_revision(row)
         return rows
     def create(self,pid,rid,local_time,body,actor,fold=None):
         if pid not in self.account['properties']:raise ValueError('Unknown property')
@@ -99,6 +105,22 @@ class Queue:
             db.execute('INSERT INTO scheduled VALUES(?,?,?,?,?,?,?,?,?,?,?)',(identity,self.aid,pid,rid,due,prop['timezone'],body.strip(),'pending',actor,time.time(),None))
             db.execute('INSERT INTO schedule_audit VALUES(?,?,?,?)',(identity,'created',actor,time.time()))
         return {'id':identity,'state':'pending'}
+    def update(self,pid,identity,value,actor):
+        if pid not in self.account['properties']:raise ValueError('Unknown property')
+        body=value.get('message')
+        if value.get('confirm_send') is not True or not isinstance(body,str) or not body.strip() or len(body)>5000:raise ValueError('Confirm replacement message')
+        if not ready(self.root,self.aid):raise ValueError('Save and test owner email')
+        due=local_due(value.get('local_time'),self.account['properties'][pid]['timezone'],value.get('fold'))
+        with self.connect() as db:row=db.execute('SELECT * FROM scheduled WHERE id=? AND account=? AND property=?',(identity,self.aid,pid)).fetchone()
+        if not row:raise ValueError('Scheduled message not found')
+        reservation(self.account,pid,row['reservation'])
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT * FROM scheduled WHERE id=? AND account=? AND property=?',(identity,self.aid,pid)).fetchone()
+            if row['state']!='pending' or message_revision(row)!=value.get('revision'):raise ValueError('Message changed or delivery is already in progress; refresh before editing')
+            db.execute('UPDATE scheduled SET due=?,body=? WHERE id=?',(due,body.strip(),identity))
+            db.execute('INSERT INTO schedule_audit VALUES(?,?,?,?)',(identity,'edited',actor,time.time()))
+        return {'updated':True}
     def cancel(self,pid,identity,actor):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -133,7 +155,7 @@ class Queue:
                 if not isinstance(status,str) or status.lower() not in {'accepted','confirmed'}:raise ValueError('Reservation is not confirmed for sending')
             except Exception:self.review(row,'Reservation ownership/status could not be verified; review scheduled message');continue
             with self.connect() as db:
-                changed=db.execute("UPDATE scheduled SET state='sending' WHERE id=? AND state='pending'",(row['id'],)).rowcount
+                changed=db.execute("UPDATE scheduled SET state='sending' WHERE id=? AND state='pending' AND due=? AND body=?",(row['id'],row['due'],row['body'])).rowcount
             if not changed:continue
             try:
                 from hosting.guest_sending import claim_attempt

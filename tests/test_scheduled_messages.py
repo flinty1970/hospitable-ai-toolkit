@@ -170,5 +170,28 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(response.status_code,400)
             self.assertIn('clocks move forward',response.json()['detail'])
 
+    def test_edit_pending_revision_and_worker_uses_updated_message(self):
+        identity=self.create()['id'];row=self.queue.list('property')[0]
+        value={'confirm_send':True,'message':'Updated greeting','local_time':'2099-06-02T13:00','revision':row['revision']}
+        with self.assertRaises(ValueError):self.queue.update('other',identity,value,'owner')
+        self.assertTrue(self.queue.update('property',identity,value,'owner')['updated'])
+        with self.assertRaises(ValueError):self.queue.update('property',identity,value,'owner')
+        row=self.queue.list('property')[0];self.assertEqual(row['body'],'Updated greeting')
+        self.due(identity)
+        with patch.object(scheduling.requests,'post',return_value=Mock(status_code=201)) as post:
+            self.queue.deliver_due()
+            self.assertEqual(post.call_args.kwargs['json'],{'body':'Updated greeting'})
+        value['revision']=self.queue.list('property')[0]['revision']
+        with self.assertRaises(ValueError):self.queue.update('property',identity,value,'owner')
+
+    def test_edit_during_delivery_validation_invalidates_old_send_snapshot(self):
+        identity=self.create()['id'];self.due(identity)
+        def changed(*args):
+            with self.queue.connect() as db:db.execute('UPDATE scheduled SET due=?,body=? WHERE id=?',(time.time()+3600,'Edited before delivery',identity))
+            return {'status':'accepted'}
+        with patch.object(scheduling,'reservation',side_effect=changed),patch.object(scheduling.requests,'post') as post:
+            self.queue.deliver_due();post.assert_not_called()
+        self.assertEqual(self.queue.list('property')[0]['state'],'pending')
+
 
 if __name__=='__main__':unittest.main()
