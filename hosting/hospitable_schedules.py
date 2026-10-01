@@ -15,8 +15,6 @@ import requests
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from hosting.config import secret
-from hosting.account_details import picture_url
-from urllib.parse import urlsplit
 from hosting.gateway import API_BASE, object_id
 from hosting.pdf_ingestion import write_atomic
 from hosting.indexing import index_lock
@@ -98,24 +96,6 @@ def disconnect(root):
 def revision(row):
     return hashlib.sha256(json.dumps(row,sort_keys=True).encode()).hexdigest()
 
-def image_attachments(row):
-    """Only expose explicit image attachments, never URLs inferred from message text."""
-    rows=row.get('attachments',[])
-    if isinstance(rows,dict): rows=rows.get('data',[])
-    if not isinstance(rows,list): return []
-    result=[];seen=set()
-    for item in rows[:50]:
-        if isinstance(item,str): item={'url':item}
-        if not isinstance(item,dict): continue
-        url=picture_url(item.get('url'))
-        if not url or url in seen: continue
-        mime=item.get('mime_type') or item.get('content_type') or ''
-        kind=item.get('type')
-        extension=urlsplit(url).path.lower().endswith(('.jpg','.jpeg','.png','.gif','.webp','.avif'))
-        if not ((isinstance(mime,str) and mime.startswith('image/')) or kind=='image' or extension): continue
-        seen.add(url);result.append({'url':url,'name':str(item.get('filename') or item.get('name') or 'Message image')[:200]})
-    return result
-
 def listing(root,aid,account,pid,rid):
     if pid not in account['properties']:raise ValueError('Unknown property')
     reservation(account,pid,rid)
@@ -130,7 +110,7 @@ def listing(root,aid,account,pid,rid):
     for row in rows:
         if not isinstance(row,dict) or not isinstance(row.get('id'),str) or (row.get('message') is not None and not isinstance(row.get('message'),str)):raise ValueError('Unexpected scheduled message format')
         state='sent' if row.get('sent_at') else 'cancelled' if row.get('cancelled_at') else 'failed' if row.get('failed') else 'pending'
-        result.append({'id':row['id'],'source':'hospitable','reservation':rid,'title':row.get('title') or 'Hospitable message','body':row.get('message') or '', 'body_available':isinstance(row.get('message'),str),'images':image_attachments(row),'local_time':row.get('scheduled_for'),'timezone':row.get('timezone'),'state':state,'revision':revision(row)})
+        result.append({'id':row['id'],'source':'hospitable','reservation':rid,'title':row.get('title') or 'Hospitable message','body':row.get('message') or '', 'body_available':isinstance(row.get('message'),str),'local_time':row.get('scheduled_for'),'timezone':row.get('timezone'),'state':state,'revision':revision(row)})
     return result
 
 def update(root,aid,account,pid,rid,identity,value):
