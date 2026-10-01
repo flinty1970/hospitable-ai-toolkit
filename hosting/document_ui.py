@@ -79,7 +79,7 @@ def install(app, accounts):
     async def page():
         return HTMLResponse(Path(__file__).with_name('document_ui.html').read_text(), headers={
             'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-            'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+            'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; frame-ancestors 'none'; base-uri 'none'",
             'Referrer-Policy': 'no-referrer'})
 
     @app.get('/admin/documents/properties')
@@ -91,7 +91,7 @@ def install(app, accounts):
         if os.environ.get('TOOLKIT_DATA_DIR'):
             for aid in accounts:
                 names.update(display_details(os.environ['TOOLKIT_DATA_DIR'], aid).get('properties', {}))
-        return {'properties': [{'id': pid, 'name': names.get(pid, {}).get('nickname') or prop.get('name', pid)} for pid, prop in properties.items()]}
+        return {'properties': [{'id': pid, 'picture': names.get(pid, {}).get('picture'), 'name': names.get(pid, {}).get('nickname') or prop.get('name', pid)} for pid, prop in properties.items()]}
 
     @app.get('/admin/documents/{pid}')
     async def documents(pid: str, request: Request):

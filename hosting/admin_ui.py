@@ -61,7 +61,7 @@ def install(app, accounts, data_root=None):
     async def page():
         return HTMLResponse(Path(__file__).with_name('admin_ui.html').read_text(), headers={
             'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-            'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"})
+            'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; frame-ancestors 'none'; base-uri 'none'"})
 
     @app.get('/admin/settings')
     async def status(request: Request):
@@ -71,7 +71,7 @@ def install(app, accounts, data_root=None):
             from hosting.account_details import read as display_details
             display = display_details(root, aid)
             return {'account_id': aid, 'account_name': display.get('name') or account.get('name') or 'Your Hospitable account', 'owner_email_required': True, 'account': controls.effective(aid, account),
-                'properties': [{'id': pid, 'name': display.get('properties', {}).get(pid, {}).get('nickname') or prop['name'], 'timezone': prop['timezone'],
+                'properties': [{'id': pid, 'name': display.get('properties', {}).get(pid, {}).get('nickname') or prop['name'], 'timezone': prop['timezone'], 'picture': display.get('properties', {}).get(pid, {}).get('picture'),
                     'settings': controls.effective(aid, account, pid), 'channels': display.get('properties', {}).get(pid)} for pid, prop in account['properties'].items()],
                 'pending_properties': [{'id': pid, **prop} for pid, prop in pending.items() if pid not in account['properties']],
                 'setup_required': not bool(account['properties']), 'auto_responses_available': True,

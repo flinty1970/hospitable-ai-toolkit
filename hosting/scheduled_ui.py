@@ -43,13 +43,13 @@ def install(app,accounts,data_root=None):
         return response
     @app.get('/scheduled',response_class=HTMLResponse)
     async def page():
-        return HTMLResponse(Path(__file__).with_name('scheduled_ui.html').read_text(),headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"})
+        return HTMLResponse(Path(__file__).with_name('scheduled_ui.html').read_text(),headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; frame-ancestors 'none'; base-uri 'none'"})
     @app.get('/admin/scheduled/properties')
     async def properties(request:Request):
         authorize(request)
         def snapshot():
             display=read(root,aid)
-            return {'properties':[{'id':pid,'name':display.get('properties',{}).get(pid,{}).get('nickname') or p['name'],'timezone':p['timezone']} for pid,p in account['properties'].items()]}
+            return {'properties':[{'id':pid,'name':display.get('properties',{}).get(pid,{}).get('nickname') or p['name'],'picture':display.get('properties',{}).get(pid,{}).get('picture'),'timezone':p['timezone']} for pid,p in account['properties'].items()]}
         return await task(snapshot)
     @app.get('/admin/scheduled/connection')
     async def connection(request:Request):

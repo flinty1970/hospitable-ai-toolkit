@@ -3,10 +3,20 @@ import json
 import math
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 import requests
 from hosting.config import secret
 from hosting.pdf_ingestion import write_atomic
 
+
+def picture_url(value):
+    """Accept only credential-free HTTPS property image URLs."""
+    if not isinstance(value, str) or len(value)>2048 or any(c.isspace() for c in value): return None
+    try:
+        url=urlsplit(value)
+        return value if url.scheme=='https' and url.hostname and not url.username and not url.password else None
+    except ValueError:
+        return None
 
 def read(root, aid):
     path=Path(root)/'state/account-display.json'
@@ -116,7 +126,7 @@ def refresh(root, aid, account):
                         label=str(markup)+' (API value; unit not supplied)'
                     channels.append({'channel':platform[:100],'markup':label,'connection_status': 'Connected' if listing.get('connected') is True else 'Disconnected' if listing.get('connected') is False else 'Not supplied by API'})
             nickname=row.get('name') or row.get('public_name')
-            properties[pid]={'channels':channels,'available':isinstance(listings,list), 'nickname':nickname[:500] if isinstance(nickname,str) else None}
+            properties[pid]={'picture':picture_url(row.get('picture')),'channels':channels,'available':isinstance(listings,list), 'nickname':nickname[:500] if isinstance(nickname,str) else None}
         meta=value.get('meta') or {};last=meta.get('last_page')
         if type(last) is int:
             if last<1 or last>100: raise ValueError('Invalid pagination')
