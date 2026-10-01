@@ -16,6 +16,7 @@ Suggested guest files:
 - `appliances.md`: model-specific guest operation, without repair instructions.
 - `heating_hot_water.md`: ordinary guest controls and fault reporting.
 - `housekeeping.md`: guest cleaning supplies, linen and routine service information.
+- `ring_camera.md`: verified Ring doorbell/camera disclosure, recording/audio facts and host review of privacy questions.
 - `local_area.md`: verified nearby essentials, transport and urgent-help contacts.
 
 Use `AI_PROMPT.md` with any text-capable AI assistant. Supply only redacted, approved material. An AI draft is not factual verification: compare it with your current house guide, installed equipment and local waste-provider instructions before use.

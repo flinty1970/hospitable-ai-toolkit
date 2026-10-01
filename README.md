@@ -242,6 +242,7 @@ verification.
 | [appliances.md](examples/property-knowledge/appliances.md) | Verified model-specific guest operation |
 | [heating_hot_water.md](examples/property-knowledge/heating_hot_water.md) | Guest controls, shower operation and fault reporting |
 | [housekeeping.md](examples/property-knowledge/housekeeping.md) | Cleaning supplies, towels, linen and service notices |
+| [ring_camera.md](examples/property-knowledge/ring_camera.md) | Disclosed Ring locations, recording/audio facts and privacy questions |
 | [local_area.md](examples/property-knowledge/local_area.md) | Verified shops, transport, public links and urgent help |
 
 These are generic templates with placeholders, not facts about Windsor or any
@@ -258,7 +259,7 @@ requirements):
 Create separate guest-safe Markdown files from the property facts I provide.
 Use only supplied, confirmed facts; ask about gaps and conflicts.
 Cover property details, address/directions/parking, check-in/out, Wi-Fi, house rules, rubbish/trash and
-recycling, supplies, appliances, heating/hot water, housekeeping and local area.
+recycling, supplies, appliances, heating/hot water, housekeeping, disclosed cameras and local area.
 For bins include labels/colours, accepted waste, collection schedule/time,
 collection point and who puts bins out. Never infer local rules from colours.
 Exclude passwords/access codes, private contacts, automation and internal setup.
