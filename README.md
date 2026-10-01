@@ -218,6 +218,63 @@ override settings or opt out. It catches up a missed run after restart, persists
 successful dates, runs properties sequentially and retries failures after an hour.
 It never installs host cron jobs or uses Windsor's `reindex.sh`/PDF builder.
 
+
+## Creating guest-safe Markdown with any AI assistant
+
+Use the [copy-and-paste AI prompt](examples/property-knowledge/AI_PROMPT.md) in
+ChatGPT, Claude, Gemini or another text-capable assistant. Give it your redacted
+house guide, confirmed policies, exact appliance instructions and local waste
+information. It should use supplied facts, ask about gaps, and produce separate
+guest-safe `.md` files. Review its output before indexing: AI generation is not
+verification.
+
+[The generic starter pack](examples/property-knowledge/README.md) contains:
+
+| Example file | What to fill in |
+| --- | --- |
+| [property_facts.md](examples/property-knowledge/property_facts.md) | Occupancy, beds, parking, outdoor space and accessibility |
+| [arrival_departure.md](examples/property-knowledge/arrival_departure.md) | Check-in/out, entry method and checkout duties |
+| [wifi.md](examples/property-knowledge/wifi.md) | Guest SSID, password location, coverage and workspace |
+| [house_rules.md](examples/property-knowledge/house_rules.md) | Visitors, pets, smoking, quiet hours and EV policy |
+| [bins_recycling.md](examples/property-knowledge/bins_recycling.md) | Trash/bin labels and colours, sorting, collection and responsibility |
+| [guest_supplies.md](examples/property-knowledge/guest_supplies.md) | Essentials, permitted spare locations and replenishment |
+| [appliances.md](examples/property-knowledge/appliances.md) | Verified model-specific guest operation |
+| [heating_hot_water.md](examples/property-knowledge/heating_hot_water.md) | Guest controls, shower operation and fault reporting |
+| [housekeeping.md](examples/property-knowledge/housekeeping.md) | Cleaning supplies, towels, linen and service notices |
+| [local_area.md](examples/property-knowledge/local_area.md) | Verified shops, transport, public links and urgent help |
+
+These are generic templates with placeholders, not facts about Windsor or any
+other property. Replace every placeholder or remove its section. Keep prompts,
+template instructions and owner-only checklists outside the searchable `docs/`
+folder. Exclude automation configuration, private operations, passwords and access
+codes. For Wi-Fi, provide where the guest receives the password; password requests
+currently require host review. Never infer local bin rules from lid colour.
+
+Example prompt to start with (the linked prompt above includes the complete
+requirements):
+
+```text
+Create separate guest-safe Markdown files from the property facts I provide.
+Use only supplied, confirmed facts; ask about gaps and conflicts.
+Cover property details, check-in/out, Wi-Fi, house rules, rubbish/trash and
+recycling, supplies, appliances, heating/hot water, housekeeping and local area.
+For bins include labels/colours, accepted waste, collection schedule/time,
+collection point and who puts bins out. Never infer local rules from colours.
+Exclude passwords/access codes, private contacts, automation and internal setup.
+Use verified model-specific operating instructions, not repair instructions.
+Host decisions and replenishment requests require host confirmation.
+Return each filename and its complete Markdown, plus a separate owner-only
+checklist of missing facts. Do not leave placeholders in final guest files.
+Here is my redacted, confirmed property information: [paste it here]
+```
+
+For existing Markdown, use **Property knowledge -> View / replace**. For new files,
+copy only reviewed guest-safe files into that property's host `docs/` folder;
+the current browser upload accepts PDFs, not arbitrary new Markdown files.
+Then **Update property knowledge** and test questions such as "Which bin takes
+cardboard?", "When are bins collected?", "Where is the Wi-Fi password?" and
+"We have run out of toilet paper" while the property remains paused.
+
 ## Webhook and MCP
 
 Public webhook URL: `https://your-host/webhook/hospitable/account-one?token=<secret>`.
