@@ -43,7 +43,7 @@ def resolve_property(account, payload, get=requests.get):
     reservation = object_id(data.get("reservation_id") or data.get("reservation"))
     inquiry = object_id(data.get("conversation_id") or data.get("conversation"))
     if reservation:
-        path = "/reservations/" + quote(reservation, safe="")
+        path = "/reservations/" + quote(reservation, safe="") + "?include=properties"
     elif inquiry:
         path = "/inquiries/" + quote(inquiry, safe="")
     else:
