@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 import httpx
@@ -70,8 +71,20 @@ def save(root,aid,account,token):
     if not isinstance(user,dict) or object_id(user.get('id'))!=pat_user(account):raise ValueError('MCP token belongs to a different Hospitable account')
     path=Path(root)/'state/hospitable-mcp.json';path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     with index_lock(root,True,'hospitable-mcp.lock'):
-        write_atomic(path,json.dumps({'account_id':aid,'token':token}))
+        write_atomic(path,json.dumps({'account_id':aid,'token':token,'verified_at':time.time()}))
     return {'configured':True}
+
+def test_connection(root,aid,account):
+    value=settings(root,aid)
+    if not value:raise ValueError('Connect Hospitable MCP first')
+    user=call(value['token'],'get-user',{})
+    if not isinstance(user,dict) or object_id(user.get('id'))!=pat_user(account):raise ValueError('MCP token belongs to a different Hospitable account')
+    with index_lock(root,True,'hospitable-mcp.lock'):
+        current=settings(root,aid)
+        if not current or current['token']!=value['token']:raise ValueError('MCP connection changed; test it again')
+        current['verified_at']=time.time()
+        write_atomic(Path(root)/'state/hospitable-mcp.json',json.dumps(current))
+    return {'tested':True,'verified_at':current['verified_at']}
 
 def disconnect(root):
     path=Path(root)/'state/hospitable-mcp.json'
@@ -95,9 +108,9 @@ def listing(root,aid,account,pid,rid):
     if not isinstance(rows,list) or len(rows)>500:raise ValueError('Unexpected scheduled message list')
     result=[]
     for row in rows:
-        if not isinstance(row,dict) or not isinstance(row.get('id'),str) or not isinstance(row.get('message'),str):raise ValueError('Unexpected scheduled message format')
+        if not isinstance(row,dict) or not isinstance(row.get('id'),str) or (row.get('message') is not None and not isinstance(row.get('message'),str)):raise ValueError('Unexpected scheduled message format')
         state='sent' if row.get('sent_at') else 'cancelled' if row.get('cancelled_at') else 'failed' if row.get('failed') else 'pending'
-        result.append({'id':row['id'],'source':'hospitable','reservation':rid,'title':row.get('title') or 'Hospitable message','body':row['message'],'local_time':row.get('scheduled_for'),'timezone':row.get('timezone'),'state':state,'revision':revision(row)})
+        result.append({'id':row['id'],'source':'hospitable','reservation':rid,'title':row.get('title') or 'Hospitable message','body':row.get('message') or '', 'body_available':isinstance(row.get('message'),str),'local_time':row.get('scheduled_for'),'timezone':row.get('timezone'),'state':state,'revision':revision(row)})
     return result
 
 def update(root,aid,account,pid,rid,identity,value):

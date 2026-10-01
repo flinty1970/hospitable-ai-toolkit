@@ -74,7 +74,7 @@ class NativeScheduleTests(unittest.TestCase):
         headers={'Authorization':'Bearer admin-token'}
         self.assertEqual(client.get('/admin/scheduled/connection').status_code,401)
         response=client.get('/admin/scheduled/connection',headers=headers)
-        self.assertEqual(response.json(),{'configured':True});self.assertNotIn('native-token',response.text)
+        self.assertEqual(response.json(),{'configured':True,'verified_at':None});self.assertNotIn('native-token',response.text)
         with patch.object(native,'call',side_effect=self.upstream):
             response=client.get('/admin/scheduled/property/native?reservation_id=reservation',headers=headers)
             self.assertEqual(response.status_code,200)
@@ -92,5 +92,28 @@ class NativeScheduleTests(unittest.TestCase):
         self.assertEqual(native.payload(SimpleNamespace(isError=False,structuredContent={'data':[self.row]},content=[])),[self.row])
         self.assertEqual(native.payload(SimpleNamespace(isError=False,structuredContent=None,content=[SimpleNamespace(type='text',text=json.dumps({'data':[self.row]}))])),[self.row])
         with self.assertRaises(ValueError):native.payload(SimpleNamespace(isError=True))
+
+    def test_cancelled_null_text_does_not_hide_pending_messages(self):
+        cancelled={**self.row,'id':'cancelled-id','message':None,'cancelled_at':'2026-07-27T21:11:16+01:00'}
+        def upstream(token,name,args):
+            if name=='get-reservation-scheduled-messages':return [cancelled,self.row]
+            return self.upstream(token,name,args)
+        with patch.object(native,'call',side_effect=upstream):
+            rows=native.listing(self.root,'owner',self.account,'property','reservation')
+        self.assertEqual(len(rows),2)
+        self.assertEqual(rows[0]['state'],'cancelled');self.assertEqual(rows[0]['body'],'')
+        self.assertFalse(rows[0]['body_available']);self.assertEqual(rows[1]['body'],'Welcome')
+
+    def test_saved_connection_can_be_retested_without_reentering_token(self):
+        app=FastAPI();install(app,{'owner':self.account},self.root);client=TestClient(app)
+        headers={'Authorization':'Bearer admin-token'}
+        with patch.object(native,'call',side_effect=self.upstream) as call,patch.object(native,'pat_user',return_value='account-id'):
+            response=client.post('/admin/scheduled/connection',headers=headers,json={'test':True})
+        self.assertEqual(response.status_code,200);self.assertTrue(response.json()['tested'])
+        self.assertEqual(call.call_args.args[0],'native-token-123456789')
+        self.assertGreater(client.get('/admin/scheduled/connection',headers=headers).json()['verified_at'],0)
+        self.assertEqual(self.path.stat().st_mode & 0o777,0o600)
+        with patch.object(native,'call',side_effect=self.upstream),patch.object(native,'pat_user',return_value='another-account'):
+            self.assertEqual(client.post('/admin/scheduled/connection',headers=headers,json={'test':True}).status_code,400)
 
 if __name__=='__main__':unittest.main()

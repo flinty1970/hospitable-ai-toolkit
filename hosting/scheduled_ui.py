@@ -21,7 +21,7 @@ def install(app,accounts,data_root=None):
                 raise HTTPException(400, 'The clocks move forward past this time. Choose a different send time.')
             if str(error).startswith('For a Hospitable message, choose a send time outside'):
                 raise HTTPException(400, 'For Hospitable messages, choose a time outside the repeated clock-change hour.')
-            if 'MCP' in str(error) or str(error).startswith('Native message'):
+            if 'MCP' in str(error) or str(error).startswith(('Native message','Unexpected scheduled message')):
                 raise HTTPException(400, 'Unable to load or edit Hospitable messages. Check the fallback MCP connection, account and booking; refresh before retrying an edit.')
             raise HTTPException(400,'Unable to schedule/cancel: check reservation ownership, future property-local time and tested owner email. Delivery may already be in progress.')
         except Exception:raise HTTPException(502,'Reservation or scheduling service unavailable. Check status before trying again.')
@@ -55,12 +55,16 @@ def install(app,accounts,data_root=None):
     async def connection(request:Request):
         authorize(request)
         from hosting.hospitable_schedules import settings
-        return await task(lambda:{'configured':bool(settings(root,aid))})
+        def status():
+            value=settings(root,aid)
+            return {'configured':bool(value),'verified_at':value.get('verified_at') if value else None}
+        return await task(status)
     @app.post('/admin/scheduled/connection')
     async def connect_native(request:Request):
         authorize(request);value=await body(request)
-        from hosting.hospitable_schedules import save,disconnect
+        from hosting.hospitable_schedules import save,disconnect,test_connection
         if value.get('disconnect') is True:return await task(lambda:disconnect(root))
+        if value.get('test') is True:return await task(lambda:test_connection(root,aid,account))
         return await task(lambda:save(root,aid,account,value.get('token')))
     @app.get('/admin/scheduled/{pid}/reservations')
     async def listing(pid:str,request:Request,page:int=1):
