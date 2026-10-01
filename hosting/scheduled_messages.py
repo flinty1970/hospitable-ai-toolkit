@@ -47,7 +47,9 @@ def reservations(account,pid,page=1):
         if not rid:continue
         guest=row.get('guest') or {};guest=guest.get('data',guest) if isinstance(guest,dict) else {}
         name=guest.get('name') or ' '.join(str(guest.get(k) or '') for k in ('first_name','last_name')).strip() or 'Guest'
-        result.append({'id':rid,'guest':name[:200],'code':str(row.get('code') or row.get('reservation_code') or '')[:100],'check_in':str(row.get('check_in') or row.get('checkin') or '')[:100],'check_out':str(row.get('check_out') or row.get('checkout') or '')[:100]})
+        platform=row.get('platform')
+        if isinstance(platform,dict):platform=platform.get('name') or platform.get('code') or platform.get('id')
+        result.append({'id':rid,'guest':name[:200],'platform':platform[:100] if isinstance(platform,str) else None,'code':str(row.get('code') or row.get('reservation_code') or '')[:100],'check_in':str(row.get('check_in') or row.get('checkin') or '')[:100],'check_out':str(row.get('check_out') or row.get('checkout') or '')[:100]})
     last=(value.get('meta') or {}).get('last_page')
     more=page<last if type(last) is int else bool((value.get('links') or {}).get('next'))
     return {'reservations':result,'next_page':page+1 if more and page<100 else None}

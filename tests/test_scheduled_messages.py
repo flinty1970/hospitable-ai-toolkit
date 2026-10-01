@@ -145,11 +145,30 @@ class SchedulingTests(unittest.TestCase):
             result=scheduling.reservations(self.account,'property')
             self.assertEqual(len(result['reservations']),1)
             self.assertEqual(result['next_page'],2)
+            self.assertIsNone(result['reservations'][0]['platform'])
+            response.json.return_value['data'][0]['platform']={'name':'airbnb'}
+            self.assertEqual(scheduling.reservations(self.account,'property')['reservations'][0]['platform'],'airbnb')
             self.assertEqual(get.call_args.kwargs['params']['properties[]'],'property')
             response.json.return_value={'data':{'properties':{'data':[{'id':'other'}]}}}
             with self.assertRaises(ValueError):scheduling.reservation(self.account,'property','reservation')
             response.json.return_value={'data':{'properties':{'data':[{'id':'property'}]}}}
             self.assertTrue(scheduling.reservation(self.account,'property','reservation'))
+
+    def test_page_requests_clock_choice_only_for_ambiguous_time(self):
+        app=FastAPI();install(app,{'owner':self.account},self.root)
+        client=TestClient(app);headers={'Authorization':'Bearer admin-token'}
+        value={'reservation_id':'reservation','local_time':'2026-10-25T01:30','message':'Hi','confirm_send':True}
+        with patch.object(scheduling.time,'time',return_value=0):
+            response=client.post('/admin/scheduled/property',headers=headers,json=value)
+            self.assertEqual(response.status_code,409)
+            self.assertEqual(response.json()['detail']['code'],'ambiguous_time')
+            self.assertEqual(self.queue.list('property'),[])
+            value['fold']=1
+            self.assertEqual(client.post('/admin/scheduled/property',headers=headers,json=value).status_code,200)
+            value['local_time']='2026-03-29T01:30'
+            response=client.post('/admin/scheduled/property',headers=headers,json=value)
+            self.assertEqual(response.status_code,400)
+            self.assertIn('clocks move forward',response.json()['detail'])
 
 
 if __name__=='__main__':unittest.main()

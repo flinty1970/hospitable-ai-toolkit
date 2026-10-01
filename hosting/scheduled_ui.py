@@ -14,7 +14,12 @@ def install(app,accounts,data_root=None):
     aid,account=next(iter(accounts.items()));root=Path(data_root or os.environ['TOOLKIT_DATA_DIR']);queue=Queue(root,aid,account)
     async def task(fn):
         try:return await asyncio.to_thread(fn)
-        except (ValueError,KeyError):raise HTTPException(400,'Unable to schedule/cancel: check reservation ownership, future property-local time, daylight-saving choice and tested owner email. Delivery may already be in progress.')
+        except (ValueError,KeyError) as error:
+            if str(error).startswith('This time occurs twice when clocks change'):
+                raise HTTPException(409, {'code':'ambiguous_time','message':'The clocks move back at this time, so it occurs twice. Choose the earlier or later occurrence, then schedule again.'})
+            if str(error).startswith('This local time does not exist because clocks change'):
+                raise HTTPException(400, 'The clocks move forward past this time. Choose a different send time.')
+            raise HTTPException(400,'Unable to schedule/cancel: check reservation ownership, future property-local time and tested owner email. Delivery may already be in progress.')
         except Exception:raise HTTPException(502,'Reservation or scheduling service unavailable. Check status before trying again.')
     async def body(request):
         data=bytearray()
