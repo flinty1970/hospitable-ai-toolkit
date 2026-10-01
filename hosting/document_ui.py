@@ -103,7 +103,7 @@ def install(app, accounts):
                 _, meta = review_file(root, path.name)
                 record = json.loads(meta.read_text())
                 rows.append({'filename': path.name, 'source': record['source'], 'blank_pages': record.get('blank_pages', []),
-                             'approved': record.get('approved_sha256') == hashlib.sha256(path.read_text().strip().encode()).hexdigest()})
+                             'approved': __import__('hosting.document_management',fromlist=['is_approved']).is_approved(root,record,path.read_text())})
             report = confined_folder(root, 'document-review') / 'conversion-report.json'
             errors = [row for row in json.loads(report.read_text()) if row.get('status') == 'error'] if report.exists() and not report.is_symlink() else []
             return {'documents': rows, 'errors': errors}
@@ -180,3 +180,41 @@ def install(app, accounts):
     async def update_index(pid: str, request: Request):
         authorize(request)
         return await operation(root_for(pid), lambda: rebuild(root_for(pid)))
+
+    @app.get('/admin/documents/{pid}/approved')
+    async def approved_documents(pid: str, request: Request):
+        authorize(request)
+        from hosting.document_management import listing, document, revision
+        root=root_for(pid)
+        def read():
+            name=request.query_params.get('filename')
+            if name:
+                path=document(root,name)
+                return {'text':path.read_text(),'revision':revision(path)}
+            return {'documents':listing(root)}
+        return await operation(root,read)
+
+    @app.post('/admin/documents/{pid}/approved')
+    async def change_approved(pid: str, request: Request):
+        authorize(request)
+        from hosting.document_management import change
+        try: value=json.loads(await body(request,MAX_EDIT))
+        except (ValueError,UnicodeError): raise HTTPException(400,'Invalid JSON')
+        if not isinstance(value,dict): raise HTTPException(400,'Invalid request')
+        root=root_for(pid)
+        return await operation(root,lambda:change(root,request.query_params.get('filename'),value))
+
+    @app.post('/admin/documents/{pid}/test-question')
+    async def test_question(pid: str, request: Request):
+        authorize(request)
+        root=root_for(pid)
+        try: value=json.loads(await body(request,16384))
+        except (ValueError,UnicodeError): raise HTTPException(400,'Invalid JSON')
+        question=value.get('question') if isinstance(value,dict) else None
+        if not isinstance(question,str) or not question.strip() or len(question)>4000:
+            raise HTTPException(400,'Enter a question up to 4000 characters')
+        def preview():
+            from hosting.indexing import retrieve
+            from hosting.worker import prepare_draft
+            return {'sources':retrieve(root,question.strip()),'result':prepare_draft(properties[pid],question.strip()),'sent':False}
+        return await operation(root,preview)

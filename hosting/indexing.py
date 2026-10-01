@@ -13,7 +13,7 @@ COLLECTION = "property_knowledge"
 MODEL = "all-MiniLM-L6-v2"
 
 
-def markdown_chunks(root):
+def markdown_chunks(root, allow_empty=False):
     docs = Path(root) / "docs"
     if docs.is_symlink() or Path(root).resolve() not in docs.resolve().parents:
         raise ValueError("Curated document directory escapes its property")
@@ -28,7 +28,7 @@ def markdown_chunks(root):
                 source = str(path.relative_to(docs))
                 identity = hashlib.sha256((source + ":" + str(start) + ":" + chunk).encode()).hexdigest()
                 result.append((identity, chunk, {"source": source, "guest_safe": True}))
-    if not result:
+    if not result and not allow_empty:
         raise ValueError("No curated Markdown; existing index was preserved")
     return result
 
@@ -63,9 +63,9 @@ def active_index(root):
     return path
 
 
-def rebuild(root, builder=None):
+def rebuild(root, builder=None, allow_empty=False):
     root = Path(root)
-    chunks = markdown_chunks(root)
+    chunks = markdown_chunks(root, allow_empty=allow_empty)
     with index_lock(root, True, "index-build.lock"):
         generation = uuid.uuid4().hex
         target = root / "index" / generation
