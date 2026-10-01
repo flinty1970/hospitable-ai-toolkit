@@ -39,6 +39,25 @@ class ContainerTests(unittest.TestCase):
     def start(self):
         return prepare(self.data, self.secret_dir)
 
+    def test_empty_account_bootstrap_then_import_survives_restart(self):
+        from hosting.property_setup import save_selection
+        self.config['account']['properties'] = {}
+        self.save()
+        _, account, ports = self.start()
+        self.assertEqual(ports, [])
+        self.assertEqual(account['properties'], {})
+        save_selection(self.data, 'owner-a', {'imported': {'name': 'Imported', 'timezone': 'UTC'}})
+        _, account, ports = self.start()
+        self.assertEqual(ports, [('imported', 9000)])
+        self.assertFalse(account['properties']['imported']['enabled'])
+        self.assertTrue((self.data / 'properties/imported/docs').is_dir())
+        self.assertEqual(json.loads((self.data / 'config/account.json').read_text())['account']['properties'], {})
+        from hosting.controls import Controls
+        controls = Controls(self.data / 'state/controls.sqlite3')
+        controls.set('admin-ui', 'owner-a', 'imported', enabled=True, shadow=True)
+        _, account, _ = self.start()
+        self.assertEqual(controls.effective('owner-a', account, 'imported')['mode'], 'shadow')
+
     def test_one_account_two_properties_have_separate_mounted_data(self):
         aid, account, ports = self.start()
         self.assertEqual(aid, "owner-a")

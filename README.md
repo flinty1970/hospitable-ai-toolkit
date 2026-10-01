@@ -78,7 +78,7 @@ git clone https://github.com/flinty1970/hospitable-ai-toolkit.git
 cd hospitable-ai-toolkit
 mkdir -p /srv/hospitable-ai/account-one/data/config /srv/hospitable-ai/account-one/secrets
 chmod 700 /srv/hospitable-ai/account-one/secrets
-cp examples/account.json /srv/hospitable-ai/account-one/data/config/account.json
+cp examples/account.setup.json /srv/hospitable-ai/account-one/data/config/account.json
 cp examples/mcp_clients.json /srv/hospitable-ai/account-one/data/config/mcp_clients.json
 cp examples/credentials.env.example /srv/hospitable-ai/account-one/secrets/credentials.env
 cp examples/msmtprc.example /srv/hospitable-ai/account-one/secrets/msmtprc
@@ -91,8 +91,9 @@ service user. Set APP_UID/APP_GID to that user's numeric IDs and match the mount
 files' ownership. Do not make credentials world-readable to solve permissions.
 Edit the copied files **before startup**:
 
-1. Replace property IDs with the real Hospitable UUIDs selected for this account.
-2. Set names, timezones and approved per-property settings in `account.json`.
+1. The setup example starts with no imported properties. After startup, open
+   `/settings`, sign in, and discover/select properties using this account's PAT.
+2. Alternatively, use `examples/account.json` to configure property UUIDs manually.
 3. Put this account's PAT/model keys and distinct randomly generated tokens in
    `secrets/credentials.env`; this file is parsed as literal assignments, not shell code.
 4. Set this owner's SMTP server, user, password and sender in `msmtprc`, and real
@@ -112,6 +113,36 @@ curl --fail http://127.0.0.1:8790/ready
 Neither guarantees provider API/model/SMTP availability. Failed children cause
 the container to exit; Docker restarts it. An unhealthy healthcheck alone does
 not make Docker automatically restart a still-running container.
+
+## Browser account setup and controls
+
+Open `/settings` on the same toolkit port and sign in with the admin token.
+**Refresh Hospitable properties** lists names, IDs and timezones from this
+account's PAT. Select properties and import them; membership is verified again
+server-side against the account API. No guest documents or reservations are
+imported by discovery. Properties absent from the account API cannot be imported.
+
+Selections persist in `data/state/property-selection.json`, separate from the
+read-only configuration. Imports add to the configured properties and never
+delete existing folders or knowledge. Click the restart button to apply them;
+the supervisor exits gracefully and Compose's `unless-stopped` policy restarts
+this account container. New properties start **paused**. Then select **Draft only**
+to enable processing after loading approved property knowledge. Bare `docker run`
+without a restart policy requires an operator restart instead.
+
+Account/property **Draft only / Paused** controls persist immediately in the
+existing controls database and are audited. Account pause overrides property
+settings. Resuming wakes pending inbox events; old review events are not replayed.
+Automatic replies remain unavailable and cannot be enabled by the menu/API.
+Email and optional HA alert switches use existing owner configuration; enabling
+an unconfigured alert channel is rejected. Setting up SMTP credentials, changing
+models/timezones/indexing schedules, guest-draft review, and account OAuth login
+still require separate configuration or future UI work.
+
+Use `/documents` for each property's PDF review and index update. Both interfaces
+use memory-only bearer tokens and the same trusted LAN/VPN or SSH-tunnel access.
+Do not publicly expose HTTP admin routes; use HTTPS and access restrictions for
+a public owner portal. The Caddy example keeps admin routes private.
 
 ## Property documents and indexing
 

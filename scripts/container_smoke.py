@@ -59,6 +59,9 @@ def main():
                 port = docker("port", name, "8790/tcp").split(":")[-1]
                 base = "http://127.0.0.1:" + port
                 wait_ready(base)
+                settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
+                assert len(settings["properties"]) == 2 and not settings["auto_responses_available"]
+                assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "paused"}, token=account_id + "-admin")[1]["mode"] == "disabled"
                 if account_id == "one":
                     (data / "properties/property-one/docs/guide.md").write_text("Towels for property one are in the blue cupboard.")
                     (data / "properties/property-two/docs/guide.md").write_text("Towels for property two are in the green drawer.")
@@ -78,6 +81,9 @@ def main():
                 port = docker("port", name, "8790/tcp").split(":")[-1]
                 base = "http://127.0.0.1:" + port
                 wait_ready(base)
+                settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
+                assert next(p for p in settings["properties"] if p["id"] == "property-one")["settings"]["mode"] == "disabled"
+                assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "draft"}, token=account_id + "-admin")[1]["mode"] == "shadow"
                 request(base, f"/webhook/hospitable/{account_id}?token={account_id}-hook", event)
                 counts = request(base, "/admin/inbox", token=account_id + "-admin")[1]["counts"]
                 assert sum(row["count"] for row in counts) == 1

@@ -18,6 +18,15 @@ MAX_UPLOAD = 50 * 1024 * 1024
 MAX_EDIT = 8 * 1024 * 1024
 
 
+def authorize(request):
+    expected = 'Bearer ' + secret('TOOLKIT_ADMIN_SECRET')
+    if not hmac.compare_digest(request.headers.get('Authorization', '').encode(), expected.encode()):
+        raise HTTPException(401, 'Admin token required')
+    origin = request.headers.get('origin')
+    if origin and urlsplit(origin).netloc != request.headers.get('host'):
+        raise HTTPException(403, 'Cross-origin requests are not allowed')
+
+
 def install(app, accounts):
     @app.middleware('http')
     async def private_responses(request, call_next):
@@ -28,14 +37,6 @@ def install(app, accounts):
         return response
 
     properties = {pid: prop for account in accounts.values() for pid, prop in account['properties'].items()}
-
-    def authorize(request):
-        expected = 'Bearer ' + secret('TOOLKIT_ADMIN_SECRET')
-        if not hmac.compare_digest(request.headers.get('Authorization', '').encode(), expected.encode()):
-            raise HTTPException(401, 'Admin token required')
-        origin = request.headers.get('origin')
-        if origin and urlsplit(origin).netloc != request.headers.get('host'):
-            raise HTTPException(403, 'Cross-origin requests are not allowed')
 
     def root_for(pid):
         prop = properties.get(pid)

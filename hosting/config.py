@@ -47,7 +47,7 @@ def load_registry(path):
             raise ValueError("Accounts must use distinct webhook secrets")
         tokens.add(token)
         properties = account["properties"]
-        if not isinstance(properties, dict) or not properties:
+        if not isinstance(properties, dict) or (not properties and os.environ.get("TOOLKIT_INSTANCE_MODE") != "container"):
             raise ValueError("Select at least one property per account")
         for property_id, prop in properties.items():
             validate_integrations(prop)

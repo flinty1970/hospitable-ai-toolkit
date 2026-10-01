@@ -31,6 +31,8 @@ def create_app():
 
     from hosting.document_ui import install
     install(app, accounts)
+    from hosting.admin_ui import install as install_admin
+    install_admin(app, accounts)
 
     if os.environ.get("TOOLKIT_MCP_ENABLED") == "true":
         from hosting.mcp_server import create_app as mcp_app
