@@ -117,7 +117,11 @@ not make Docker automatically restart a still-running container.
 
 Put PDFs/manuals under that property's `source-documents/`. Manual and daily
 ingestion extract new text-based PDFs into `document-review/` as Markdown, with
-page headings and source fingerprints. They never enter the guest index until
+page headings and source fingerprints. Layout-aware extraction keeps positioned
+words together while retaining line and column structure. Converter upgrades
+create a new review version; previous edits and approved text are preserved.
+Run `convert-pdfs` again after upgrading, review the new `-v2.md` version,
+reapply any host corrections, and explicitly replace the approved version. They never enter the guest index until
 you review/edit them and explicitly approve them into `docs/`. Installer
 instructions, access codes and private information must be removed during review.
 The browser document interface is at `/documents` on the toolkit port. Sign in

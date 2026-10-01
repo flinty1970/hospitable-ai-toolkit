@@ -8,6 +8,9 @@ import time
 from pathlib import Path
 
 
+CONVERSION_VERSION = 2
+
+
 class PDFProblem(ValueError):
     pass
 
@@ -51,7 +54,13 @@ def extract_pdf(path):
         raise PDFProblem("PDF exceeds the 1000-page limit")
     pages, blank_pages, characters = [], [], 0
     for number, page in enumerate(reader.pages, 1):
-        text = (page.extract_text() or "").replace("\x00", "").strip()
+        # Layout extraction groups separately positioned words on the same line.
+        # Preserve line/column structure rather than joining arbitrary newlines.
+        plain = page.extract_text() or ""
+        text = (page.extract_text(extraction_mode="layout", layout_mode_space_vertically=False) or plain) if plain.strip() else ""
+        text = text.replace("\x00", "").replace("\u200b", "")
+        text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
+        text = re.sub(r"\n{3,}", "\n\n", text)
         characters += len(text)
         if characters > 2_000_000:
             raise PDFProblem("Extracted text exceeds the 2 million character limit")
@@ -81,7 +90,7 @@ def convert_all(root):
             continue
         source_id = hashlib.sha256(relative.encode()).hexdigest()[:12]
         slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", path.stem)[:60] or "document"
-        filename = f"{slug}-{source_id}-{digest[:16]}.md"
+        filename = f"{slug}-{source_id}-{digest[:16]}-v{CONVERSION_VERSION}.md"
         markdown = review / filename
         metadata = markdown.with_suffix(".json")
         if markdown.exists() and metadata.exists():
@@ -93,7 +102,7 @@ def convert_all(root):
                 raise PDFProblem("Source PDF changed during extraction; retry")
             write_atomic(markdown, f"# {path.stem}\n\n{text}")
             write_atomic(metadata, json.dumps({"schema": 1, "source": relative,
-                "source_sha256": digest, "source_id": source_id,
+                "source_sha256": digest, "source_id": source_id, "conversion_version": CONVERSION_VERSION,
                 "blank_pages": blank_pages, "converted_at": time.time()}, indent=2))
             results.append({"source": relative, "status": "review_required", "markdown": filename, "blank_pages": blank_pages})
         except Exception as error:
