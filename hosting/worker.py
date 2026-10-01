@@ -94,6 +94,11 @@ def create_app():
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     def process(payload):
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+            from hosting.email_setup import ready as email_ready
+            effective = controls.effective(account_id, account, property_id)
+            if not email_ready(os.environ['TOOLKIT_DATA_DIR'], account_id) or not effective['email_enabled']:
+                raise HTTPException(503, 'Tested owner email is required for review alerts; events remain pending')
         if controls.effective(account_id, account, property_id)["mode"] != "shadow":
             raise HTTPException(503, "Processing paused or live sending unavailable")
         # Independent check also protects against accidental gateway misrouting.

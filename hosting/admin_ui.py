@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 from hosting.controls import Controls, control_path
 from hosting.ai_service import public_settings
+from hosting.email_setup import public_settings as smtp_public_settings
 from hosting.document_ui import authorize
 from hosting.indexing import index_lock
 from hosting.pdf_ingestion import write_atomic
@@ -44,9 +45,9 @@ def install(app, accounts, data_root=None):
             except DiscoveryError as error:
                 raise HTTPException(400, str(error))
             except (ValueError, KeyError):
-                raise HTTPException(400, 'Unable to apply settings; check provider, model, API key/billing, selection or notification configuration.')
+                raise HTTPException(400, 'Unable to apply settings; check provider, model, API key/billing, selection or email configuration.')
             except Exception:
-                raise HTTPException(502, 'Hospitable or settings unavailable; retry later. No credentials displayed.')
+                raise HTTPException(502, 'Connection or delivery failed; check service settings and retry. No credentials displayed.')
         return await asyncio.to_thread(run)
 
     @app.middleware('http')
@@ -67,12 +68,14 @@ def install(app, accounts, data_root=None):
         authorize(request)
         def snapshot():
             pending = read_selection(root, aid)
-            return {'account_id': aid, 'account': controls.effective(aid, account),
-                'properties': [{'id': pid, 'name': prop['name'], 'timezone': prop['timezone'],
-                    'settings': controls.effective(aid, account, pid)} for pid, prop in account['properties'].items()],
+            from hosting.account_details import read as display_details
+            display = display_details(root, aid)
+            return {'account_id': aid, 'account_name': display.get('name') or account.get('name') or 'Your Hospitable account', 'owner_email_required': True, 'account': controls.effective(aid, account),
+                'properties': [{'id': pid, 'name': display.get('properties', {}).get(pid, {}).get('nickname') or prop['name'], 'timezone': prop['timezone'],
+                    'settings': controls.effective(aid, account, pid), 'channels': display.get('properties', {}).get(pid)} for pid, prop in account['properties'].items()],
                 'pending_properties': [{'id': pid, **prop} for pid, prop in pending.items() if pid not in account['properties']],
                 'setup_required': not bool(account['properties']), 'auto_responses_available': False,
-                'heating_available': False, 'ai': public_settings(root, aid, account)}
+                'heating_available': False, 'ai': public_settings(root, aid, account), 'smtp': smtp_public_settings(root, aid)}
         return await task(snapshot)
 
     @app.post('/admin/settings/discover')
@@ -157,6 +160,16 @@ def install(app, accounts, data_root=None):
         if not options:
             raise HTTPException(400, 'Choose a setting to change')
         def save():
+            from hosting.email_setup import ready as email_ready
+            if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+                if options.get('enabled') is True:
+                    if not email_ready(root, aid):
+                        raise HTTPException(409, 'Save and send a successful owner test email before enabling draft processing')
+                    controls.set('admin-ui', aid, None, email_enabled=True)
+                    if pid:
+                        options['email_enabled'] = True
+                if options.get('email_enabled') is False:
+                    raise HTTPException(409, 'Owner email is required for human-review alerts; pause processing instead')
             from hosting.notifications import validate_channel
             for channel, key in (('email', 'email_enabled'),):
                 if options.get(key) is True:
@@ -196,3 +209,23 @@ def install(app, accounts, data_root=None):
                 return {'models': list_models(provider, key)}
             return test_connection(provider, model, key)
         return await task(apply)
+
+    @app.post('/admin/settings/smtp/{operation}')
+    async def smtp_settings(operation: str, request: Request):
+        authorize(request)
+        if operation not in {'save', 'test'}:
+            raise HTTPException(404, 'Unknown SMTP operation')
+        value = await body(request)
+        from hosting.email_setup import save_settings, test_email
+        return await task(lambda: save_settings(root, aid, value) if operation == 'save' else test_email(root, aid, value))
+
+    @app.post('/admin/settings/account/{operation}')
+    async def account_display(operation: str, request: Request):
+        authorize(request)
+        from hosting.account_details import refresh, save_name
+        if operation == 'refresh':
+            return await task(lambda: refresh(root, aid, account))
+        if operation == 'name':
+            value = await body(request)
+            return await task(lambda: save_name(root, aid, value.get('name')))
+        raise HTTPException(404, 'Unknown account operation')

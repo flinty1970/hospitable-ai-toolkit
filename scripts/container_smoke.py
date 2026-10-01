@@ -83,7 +83,11 @@ def main():
                 wait_ready(base)
                 settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
                 assert next(p for p in settings["properties"] if p["id"] == "property-one")["settings"]["mode"] == "disabled"
-                assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "draft"}, token=account_id + "-admin")[1]["mode"] == "shadow"
+                try:
+                    request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "draft"}, token=account_id + "-admin")
+                    raise AssertionError("Processing enabled without tested owner email")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 409
                 request(base, f"/webhook/hospitable/{account_id}?token={account_id}-hook", event)
                 counts = request(base, "/admin/inbox", token=account_id + "-admin")[1]["counts"]
                 assert sum(row["count"] for row in counts) == 1

@@ -137,7 +137,7 @@ existing controls database and are audited. Account pause overrides property
 settings. Resuming wakes pending inbox events; old review events are not replayed.
 Automatic replies remain unavailable and cannot be enabled by the menu/API.
 Email alert switches use existing owner configuration; enabling
-an unconfigured alert channel is rejected. Setting up SMTP credentials, changing
+an unconfigured alert channel is rejected. Changing
 timezones/indexing schedules, guest-draft review, and account OAuth login
 still require separate configuration or future UI work.
 
@@ -309,3 +309,13 @@ In `/settings`, choose Anthropic (Claude), OpenAI, xAI (Grok), or Google (Gemini
 The saved provider/model applies account-wide to the next draft, with no restart. Existing Claude configuration remains the fallback until a selection is saved. An empty setup can start without a model key; configure AI before enabling drafts. Existing environment keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `GEMINI_API_KEY`) can be reused; leave the key input blank to retain an available key. Switching providers never reuses a different provider's key.
 
 Browser-entered keys persist in `data/state/ai-settings.json` with mode 600, separate from the secret-free registry and the read-only installation credentials file. Treat data backups as credential backups. Keys are never returned by the settings API; the browser password field is cleared after saving/disconnecting. Enter keys over HTTPS or a trusted SSH tunnel. Changing AI providers sends future draft context to the chosen provider. API/model failures remain human-review events; automatic guest sending is still unavailable.
+
+### Browser email setup
+
+The Owner email alerts section of `/settings` accepts SMTP host, port, STARTTLS/TLS, username, app password/password, sender and one owner recipient. **Send test email** uses the form values and sends a plain setup message to that recipient; it does not save settings or enable alerts. **Save email settings** persists a private mode-600 `data/state/smtp-settings.json`. The password is never returned to the browser; leave it blank to retain it, or enter a replacement. Changing host or username requires re-entering the password. TLS certificate verification is always enabled. Some providers require an app password or an allowed sender; OAuth-only SMTP is not supported.
+
+Saved browser settings override installer msmtp delivery configuration for this account and its properties without a restart. A saved email connection must pass the test before processing can be enabled in a community container. Enabling draft processing also enables required email alerts. Review-email alerts cannot be turned off while using processing; pause processing instead. Workers keep events pending until tested email and alert permission are ready. Changing SMTP settings invalidates the test until the new settings are successfully tested. Test responses mean the SMTP server accepted delivery, so check the inbox/spam folder. Generated msmtp files are mode 600 and deleted after delivery. Backups of data must be protected as credential backups.
+
+### Account and channel display
+
+Use **Refresh name and connected channels from Hospitable** to fetch properties with `user,listings` included. The account display name uses the returned user name when available and can be edited; the internal account ID/data folder stays fixed. Property cards use Hospitable's internal property name/nickname before the public listing title. Listing-read permission is required for channels. API markup values are shown only when explicitly present; missing values are labelled unavailable, and numeric values without units are labelled as such. No markups or prices are changed. Real-account response schemas and scope access still require staging validation.
