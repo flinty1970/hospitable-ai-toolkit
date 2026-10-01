@@ -65,3 +65,14 @@ class PDFDeleteTests(unittest.TestCase):
             root=Path(folder);(root/'source-documents').mkdir();(root/'source-documents/g.pdf').write_bytes(b'pdf')
             with self.assertRaises(ValueError):pdf_file(root,'../g.pdf')
             with self.assertRaises(ValueError):delete_pdf(root,'g.pdf',{'confirmed':True,'revision':'stale'})
+
+class SupersededTests(unittest.TestCase):
+    def test_approved_new_conversion_hides_old_but_not_new_pending(self):
+        from hosting.document_management import mark_superseded
+        rows=[dict(source='guide.pdf',filename='old.md',conversion_version=1,approved=False),dict(source='guide.pdf',filename='current.md',conversion_version=2,approved=True),dict(source='guide.pdf',filename='next.md',conversion_version=3,approved=False)]
+        mark_superseded(rows)
+        self.assertTrue(rows[0]['superseded']);self.assertFalse(rows[1]['superseded']);self.assertFalse(rows[2]['superseded'])
+    def test_pending_replacement_does_not_hide_current_approval(self):
+        from hosting.document_management import mark_superseded
+        rows=[dict(source='guide.pdf',filename='old.md',conversion_version=1,approved=True),dict(source='guide.pdf',filename='new.md',conversion_version=2,approved=False)]
+        self.assertFalse(any(r['superseded'] for r in mark_superseded(rows)))

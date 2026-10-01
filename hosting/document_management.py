@@ -119,3 +119,14 @@ def delete_pdf(root,name,value,builder=None):
             write_atomic(report,json.dumps([r for r in rows if r.get('source')!=name]))
         except (ValueError,OSError): pass
     return {'deleted_pdf':name,'index_updated':True,'chunks':result['chunks']}
+
+def mark_superseded(rows):
+    groups={}
+    for row in rows: groups.setdefault(row['source'],[]).append(row)
+    def rank(row): return (row.get('conversion_version',1),row.get('converted_at',0),row['filename'])
+    for versions in groups.values():
+        approved=[row for row in versions if row.get('approved')]
+        newest=max(approved,key=rank) if approved else None
+        for row in versions:
+            row['superseded']=newest is not None and rank(row)<rank(newest)
+    return rows
