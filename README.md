@@ -1,5 +1,7 @@
 # Hospitable AI Toolkit
 
+**Platform testing:** This community toolkit has been tested on Linux only. Windows / Docker Desktop installation, bind mounts, persistence and service setup have not been tested. Windows commands below are guidance, not a verified installation procedure.
+
 One **Hospitable account per container**, with multiple selected properties.
 Another account uses the same image in another container, on another host port,
 with its own configuration, credentials and mounted data folder.
@@ -297,7 +299,7 @@ It does not validate real guest generation or a user's SMTP/HA deployment.
 
 Before real user onboarding: stage real payloads and knowledge, confirm signing,
 add missed-event reconciliation, guest-draft review UI, retention/deletion policy and operational
-monitoring. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Schedules, heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
+monitoring. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
 by publishing this repository.
 
 ### AI provider and model settings
@@ -310,7 +312,7 @@ Browser-entered keys persist in `data/state/ai-settings.json` with mode 600, sep
 
 ### Browser email setup
 
-The Owner email alerts section of `/settings` accepts SMTP host, port, STARTTLS/TLS, username, app password/password, sender and one owner recipient. **Send test email** uses the form values and sends a plain setup message to that recipient; it does not save settings or enable alerts. **Save email settings** persists a private mode-600 `data/state/smtp-settings.json`. The password is never returned to the browser; leave it blank to retain it, or enter a replacement. Changing host or username requires re-entering the password. TLS certificate verification is always enabled. Some providers require an app password or an allowed sender; OAuth-only SMTP is not supported.
+The Owner email alerts section of `/settings` accepts SMTP host, port, STARTTLS/TLS, username, app password/password, sender and comma-separated owner recipients. **Send test email** uses the form values and sends a plain setup message to that recipient; it does not save settings or enable alerts. **Save email settings** persists a private mode-600 `data/state/smtp-settings.json`. The password is never returned to the browser; leave it blank to retain it, or enter a replacement. Changing host or username requires re-entering the password. TLS certificate verification is always enabled. Some providers require an app password or an allowed sender; OAuth-only SMTP is not supported.
 
 Saved browser settings override installer msmtp delivery configuration for this account and its properties without a restart. A saved email connection must pass the test before processing can be enabled in a community container. Enabling draft processing also enables required email alerts. Review-email alerts cannot be turned off while using processing; pause processing instead. Workers keep events pending until tested email and alert permission are ready. Changing SMTP settings invalidates the test until the new settings are successfully tested. Test responses mean the SMTP server accepted delivery, so check the inbox/spam folder. Generated msmtp files are mode 600 and deleted after delivery. Backups of data must be protected as credential backups.
 
@@ -325,3 +327,83 @@ Community containers provide **Automatic replies / Draft only / Paused** at acco
 Only new guest messages with timezone-aware `created_at`, received after the most recent global/property enablement and less than ten minutes old, qualify. Before sending, the worker independently resolves account/property ownership, fetches the message thread and confirms the event is still the latest guest message. Unconfirmed or paginated conversation data, a newer host/guest response, old pending events, incidents/host decisions, missing facts and invalid model outputs require human review. Full API message shape and channel sending permissions must be verified in staging.
 
 The worker stores `send_pending` before attempting a guest reply and an account-wide attempt ledger before the HTTP call. Sends have no automatic POST retry. Duplicate deliveries, crashes and timeouts never blindly resend; uncertain outcomes alert the owner to inspect the conversation. Rate guards allow at most two attempts per thread per minute and fifty per account per five minutes. API acceptance is recorded as sent; it is not proof of downstream channel delivery. A request already in flight cannot be recalled by changing a switch. AI-generated source grounding remains an imperfect control; validate drafts in shadow mode before opting in.
+
+### Scheduled reservation messages
+
+Open `/scheduled`, sign in with the toolkit admin token, choose a property nickname, load reservations, choose the reservation, enter the property's local date/time and literal message, then confirm **Schedule guest message**. The page lists this toolkit's pending, cancelled, sent and review messages; **Cancel scheduled message** works only while pending. The queue is persistent under `data/state/scheduled-messages.sqlite3` and runs as a supervised container process. It does not modify Hospitable's native messaging rules or their schedules.
+
+Scheduling is explicitly authorized manual sending, independent of the AI automatic-reply switches. Account/property Paused holds sends, and tested owner email plus enabled alerts are required. The reservation's property ownership is checked before saving and again at delivery, and delivery requires a confirmed/accepted reservation. A daylight-saving time that does not exist is rejected; a repeated local time requires first/second occurrence selection. Messages more than 15 minutes late require review. Sending is claimed durably before the HTTP call; cancellation cannot recall an in-flight request. Crashes, timeouts and unconfirmed outcomes require human review, never blind retry. No template short codes are expanded.
+
+Optional MCP tools now include `list_reservations`, `scheduled_messages`, `schedule_message` and `cancel_scheduled_message`. Reading requires property `read` permission; creating/cancelling additionally requires a separate explicit property `schedule` permission in `mcp_clients.json`. Existing client grants are not upgraded automatically. `schedule_message` requires `confirm_send: true`; callers must obtain authorization for the concrete recipient, message and time before creating a schedule. MCP remains disabled unless configured, with provisioned bearer tokens rather than self-service OAuth login. No schedules are created by merely enabling MCP.
+
+### Gmail owner alerts and multiple recipients
+
+For Gmail, use SMTP host `smtp.gmail.com`, port `587`, STARTTLS, and the full sending Gmail address as the username. Sender email normally equals that address. Owner recipients are where human-review alerts should go; enter comma-separated addresses, for example `owner@example.com, cohost@example.com`. Up to 20 addresses are supported; test emails go to every entered recipient. Enabling review alerts may deliver pending alerts to the new recipient list.
+
+Enable [Google 2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification), then create an [app password](https://myaccount.google.com/apppasswords) on the sending account. Paste the app password without Google's display spaces into the toolkit password box, not the normal Google login password. App-password availability depends on account/security/Workspace policies, and changing the Google account password revokes existing app passwords. See [Google's official instructions](https://support.google.com/accounts/answer/185833). These links and settings are also in the email setup section of the page.
+
+### Finding the admin token on Linux, Windows or macOS
+
+Once the toolkit container is running, this command is host-platform neutral:
+
+```text
+docker exec account-one-toolkit-1 python -c "from pathlib import Path; from hosting.container_runtime import read_credentials; print(read_credentials(Path('/run/toolkit-secrets/credentials.env'))['TOOLKIT_ADMIN_SECRET'])"
+```
+
+Use your actual container name (`docker ps --format "{{.Names}}"`). Linux installations may require `sudo`. Alternatively, open your instance's `secrets/credentials.env` on the host and copy just the admin-secret value. `/srv/...` is a Linux example, not a required Windows folder. The toolkit container is a Linux container even on Docker Desktop. Full Windows toolkit installation remains unvalidated; if a Windows bind mount reports permissive Unix modes and fails credential checks, use a WSL2 Linux-filesystem instance folder with the prescribed permissions rather than weakening the checks.
+
+### Caddy HTTPS setup on Linux or Windows
+
+Caddy runs on the host in these instructions, proxying the toolkit's loopback Docker port. Keep the toolkit port mapping `127.0.0.1:8790:8790`; do not expose port 8790 to the internet. Caddy in another container needs a shared Docker network and service-name upstream instead: its `127.0.0.1` is not the host. Use one Caddy installation for an existing site; do not start a second server competing for ports 80/443.
+
+Choose a hostname you control and point its DNS to the Caddy host. For ordinary public automatic certificates, TCP ports 80 and 443 must reach Caddy, with firewall/router forwarding as needed. A private-only hostname needs a suitable DNS challenge setup or Caddy's internal CA trusted on each client instead. The example `examples/Caddyfile.owner.example` allows public authenticated webhook/MCP routes but limits owner pages/APIs to private-source IP addresses. Use a trusted LAN/VPN for owner access. No access log is enabled, to avoid storing webhook URL tokens. If an upstream proxy hides real client IPs, do not rely on the example's source-IP check without configuring trusted proxy handling.
+
+**Linux (Debian/Ubuntu).** Install Caddy using the [official package instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian); that package provisions its systemd service. Edit `/etc/caddy/Caddyfile`, adding the example site after replacing `toolkit.example.com` and the internal account ID. Preserve existing sites such as Windsor. Validate before reloading:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+sudo systemctl status caddy --no-pager
+```
+
+**Windows (native Caddy).** Download the appropriate binary from [Caddy's official download page](https://caddyserver.com/download) into `C:\caddy\caddy.exe`, create `C:\caddy\Caddyfile` from the example and replace its hostname/account ID. In PowerShell:
+
+```powershell
+C:\caddy\caddy.exe validate --config C:\caddy\Caddyfile --adapter caddyfile
+C:\caddy\caddy.exe run --config C:\caddy\Caddyfile --adapter caddyfile
+```
+
+This foreground test runs until stopped. For automatic startup, after stopping that foreground process, open elevated PowerShell and register a service:
+
+```powershell
+sc.exe create caddy start= auto binPath= "C:\caddy\caddy.exe run --config C:\caddy\Caddyfile --adapter caddyfile"
+sc.exe start caddy
+```
+
+Allow the required ports through Windows Firewall for your deployment. The service account needs access to its configuration and certificate storage; protect these files. Reload changed configuration with `C:\caddy\caddy.exe reload --config C:\caddy\Caddyfile --adapter caddyfile`. See [Caddy's service documentation](https://caddyserver.com/docs/running#windows-service) for sc.exe/WinSW alternatives and account/storage considerations. The Windows service instructions follow Caddy documentation but have not been tested in this project's Linux CI.
+
+After setup, open `https://YOUR_HOSTNAME/settings` or `/scheduled` from the allowed LAN/VPN. Verify that access from an untrusted public IP is denied for `/admin/*`; webhook/MCP authentication remains enforced by the application. Caddy does not enable MCP or configure Hospitable outbound webhooks by itself.
+
+### Provisioning MCP access
+
+MCP access is optional. It uses a separate bearer token for each client, never the admin token or Hospitable PAT. The server supports clients that can supply an Authorization header; it does not provide a browser OAuth sign-in flow. A client that requires OAuth cannot connect directly yet. This applies independently of your choice of AI provider for guest drafts.
+
+1. In `data/config/account.json`, add this top-level object alongside `account`, replacing the hostname and internal account ID:
+
+```json
+"mcp": {
+  "enabled": true,
+  "resource_url": "https://toolkit.example.com/toolkit/account-one/mcp",
+  "issuer_url": "https://toolkit.example.com"
+}
+```
+
+The issuer URL is metadata only; it does not create an authorization server.
+
+2. Generate a random token locally, for example `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Add it as `OWNER_MCP_TOKEN=...` to the instance's `secrets/credentials.env`, keeping the file private (mode 600 on Linux/WSL). Give different clients different tokens.
+3. Copy `examples/mcp_clients.json` into `data/config/mcp_clients.json`; replace account/property IDs with this instance's configured IDs. Start with property `read` and `preview` permissions. Add property `schedule` only when that client should create/cancel guest messages. `settings` additionally permits control changes. Grants are explicit per property; an account-level grant does not grant all properties.
+4. Configure Caddy HTTPS for the resource URL using the instructions above, then recreate the toolkit container to load the MCP credentials/configuration.
+5. In a client that supports bearer-authenticated Streamable HTTP, use the exact `resource_url` and header `Authorization: Bearer YOUR_CLIENT_TOKEN`. First call `list_access`, then `get_settings` or `search` for a granted property. Never paste tokens into guest messages or source documents. Start with a read-only grant when checking a new client.
+
+The automated transport tests verify unauthenticated rejection, tool discovery and property permissions; a successful connection from your actual client and hostname must still be checked after deployment. Token rotation requires a container restart; changing grants in `mcp_clients.json` is read on each tool call. Remove a client's access by setting its `enabled` to `false`.

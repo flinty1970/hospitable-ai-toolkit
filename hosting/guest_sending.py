@@ -50,6 +50,20 @@ def verify_current(account, property_id, payload, effective):
         raise SendReview('A newer message or host response exists; human review required')
     return kind,identity
 
+def claim_attempt(root, aid, property_id, key, thread):
+    path=Path(root)/'state/guest-sends.sqlite3'
+    path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    with sqlite3.connect(path,timeout=10) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS sends (event_key TEXT PRIMARY KEY, account TEXT, property TEXT, thread TEXT, attempted REAL, state TEXT)')
+        db.execute('BEGIN IMMEDIATE')
+        if db.execute('SELECT 1 FROM sends WHERE event_key=?',(key,)).fetchone(): raise SendReview('A send was already attempted; inspect the conversation before replying')
+        now=time.time()
+        if db.execute('SELECT count(*) FROM sends WHERE account=? AND attempted>?',(aid,now-300)).fetchone()[0]>=50 or db.execute('SELECT count(*) FROM sends WHERE account=? AND thread=? AND attempted>?',(aid,thread,now-60)).fetchone()[0]>=2:
+            raise SendReview('Automatic reply rate limit reached; human review required')
+        db.execute('INSERT INTO sends VALUES (?,?,?,?,?,?)',(key,aid,property_id,thread,now,'attempting'))
+    path.chmod(0o600)
+    return path
+
 def send(root, aid, property_id, account, payload, answer, controls):
     effective=controls.effective(aid,account,property_id)
     if effective['mode']!='automatic' or not effective['email_enabled']: raise SendReview('Automatic replies switched off before sending')
@@ -57,18 +71,8 @@ def send(root, aid, property_id, account, payload, answer, controls):
     if not ready(root,aid): raise SendReview('Owner email is not ready')
     if not isinstance(answer,str) or not answer.strip() or len(answer)>5000: raise SendReview('Reply text unavailable or too long')
     kind,identity=verify_current(account,property_id,payload,effective)
-    path=Path(root)/'state/guest-sends.sqlite3'
-    path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-    with sqlite3.connect(path,timeout=10) as db:
-        db.execute('CREATE TABLE IF NOT EXISTS sends (event_key TEXT PRIMARY KEY, account TEXT, property TEXT, thread TEXT, attempted REAL, state TEXT)')
-        db.execute('BEGIN IMMEDIATE')
-        key=aid+':'+property_id+':'+payload['data']['id']
-        if db.execute('SELECT 1 FROM sends WHERE event_key=?',(key,)).fetchone(): raise SendReview('A send was already attempted; inspect the conversation before replying')
-        now=time.time()
-        if db.execute('SELECT count(*) FROM sends WHERE account=? AND attempted>?',(aid,now-300)).fetchone()[0]>=50 or db.execute('SELECT count(*) FROM sends WHERE account=? AND thread=? AND attempted>?',(aid,kind+':'+identity,now-60)).fetchone()[0]>=2:
-            raise SendReview('Automatic reply rate limit reached; human review required')
-        db.execute('INSERT INTO sends VALUES (?,?,?,?,?,?)',(key,aid,property_id,kind+':'+identity,now,'attempting'))
-    path.chmod(0o600)
+    key=aid+':'+property_id+':'+payload['data']['id']
+    path=claim_attempt(root,aid,property_id,key,kind+':'+identity)
     # No retries: a timeout or server error may mean the message was accepted.
     state='unknown'
     try:

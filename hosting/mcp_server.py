@@ -92,6 +92,26 @@ def create_server():
         """Read authorized alert-delivery counts; no SMTP details or HA URLs."""
         return tools.notification_status(token(), account_id, property_id)
 
+    @mcp.tool()
+    def list_reservations(account_id: str, property_id: str, page: int = 1) -> dict:
+        """List reservations only within an explicitly authorized property."""
+        return tools.list_reservations(token(), account_id, property_id, page)
+
+    @mcp.tool()
+    def scheduled_messages(account_id: str, property_id: str) -> list[dict]:
+        """List this toolkit's scheduled messages for an authorized property."""
+        return tools.scheduled_messages(token(), account_id, property_id)
+
+    @mcp.tool()
+    def schedule_message(account_id: str, property_id: str, reservation_id: str, local_time: str, message: str, confirm_send: bool = False, fold: int | None = None) -> dict:
+        """Schedule a future guest-facing message. Requires explicit schedule permission and confirm_send; time uses the property timezone. Does not send immediately."""
+        return tools.schedule_message(token(), account_id, property_id, reservation_id, local_time, message, confirm_send, fold)
+
+    @mcp.tool()
+    def cancel_scheduled_message(account_id: str, property_id: str, scheduled_message_id: str) -> dict:
+        """Cancel a pending toolkit schedule. Cannot recall delivery already in progress."""
+        return tools.cancel_scheduled_message(token(), account_id, property_id, scheduled_message_id)
+
     return mcp
 
 

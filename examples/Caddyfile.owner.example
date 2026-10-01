@@ -1,0 +1,23 @@
+# Native Caddy on the SAME host as the toolkit's loopback-published port.
+# Replace the hostname and account-one if your internal account ID differs.
+toolkit.example.com {
+    @webhook path /webhook/hospitable/account-one
+    handle @webhook {
+        reverse_proxy 127.0.0.1:8790
+    }
+    @mcp path /toolkit/account-one/mcp /toolkit/account-one/mcp/* /.well-known/oauth-protected-resource/toolkit/account-one/mcp
+    handle @mcp {
+        reverse_proxy 127.0.0.1:8790
+    }
+    @owner {
+        path /settings /documents /scheduled /admin/* /ready
+        remote_ip private_ranges
+    }
+    handle @owner {
+        reverse_proxy 127.0.0.1:8790
+    }
+    handle {
+        respond "Use the trusted LAN/VPN for the owner interface." 403
+    }
+    # No access log: webhook query tokens must not be logged.
+}

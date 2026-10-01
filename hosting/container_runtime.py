@@ -138,6 +138,7 @@ def main():
     try:
         for pid, _ in ports:
             children.append(subprocess.Popen([sys.executable, "-m", "hosting.manage", "worker", account_id, pid], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "hosting.scheduled_messages"], start_new_session=True))
         if account.get("indexing", {}).get("enabled", False):
             children.append(subprocess.Popen([sys.executable, "-m", "hosting.reindex_schedule"], start_new_session=True))
         children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8790", "--no-access-log"], start_new_session=True))
