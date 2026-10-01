@@ -22,7 +22,8 @@ def channel_config(account, property_id, channel):
         from hosting.email_setup import read_settings
         saved = read_settings(os.environ['TOOLKIT_DATA_DIR'], account['id'])
         if saved:
-            result.update(sender=saved['sender'], recipients=[saved['recipient']], browser_smtp=saved)
+            from hosting.email_setup import recipients
+            result.update(sender=saved['sender'], recipients=recipients(saved['recipient']), browser_smtp=saved)
     return result
 
 

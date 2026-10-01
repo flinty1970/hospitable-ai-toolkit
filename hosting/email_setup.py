@@ -21,6 +21,13 @@ def read_settings(root, aid):
     if value.get('schema')!=1 or value.get('account_id')!=aid: raise ValueError('Invalid SMTP account')
     return value['settings']
 
+def recipients(value):
+    if not isinstance(value,str): raise ValueError('Enter owner email addresses')
+    values=[v.strip() for v in value.split(',')]
+    if not 1<=len(values)<=20 or any(not v or len(v)>254 or any(ord(c)<=32 for c in v) or parseaddr(v)[1]!=v or '@' not in v for v in values):
+        raise ValueError('Enter valid comma-separated owner email addresses')
+    return list(dict.fromkeys(values))
+
 def validate(value):
     if set(value)!=FIELDS: raise ValueError('Complete all SMTP fields')
     if not isinstance(value['host'],str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}',value['host']): raise ValueError('Invalid SMTP host')
@@ -29,7 +36,8 @@ def validate(value):
     for field in ('username','password'):
         v=value[field]
         if not isinstance(v,str) or not v or len(v)>4096 or any(ord(c)<32 or ord(c)==127 for c in v): raise ValueError('Invalid SMTP credential')
-    for field in ('sender','recipient'):
+    recipients(value['recipient'])
+    for field in ('sender',):
         v=value[field]
         if not isinstance(v,str) or len(v)>254 or any(ord(c)<=32 for c in v) or parseaddr(v)[1]!=v or '@' not in v: raise ValueError('Invalid email address')
     return value
@@ -72,7 +80,7 @@ def send(value, message):
 
 def test_email(root, aid, value):
     value=resolve(root,aid,value)
-    message=EmailMessage();message['From']=value['sender'];message['To']=value['recipient']
+    message=EmailMessage();message['From']=value['sender'];message['To']=', '.join(recipients(value['recipient']))
     message['Subject']='Hospitable AI Toolkit: email test'
     message.set_content('Your owner email alert connection is working. This test contains no guest or property information.')
     send(value,message)
