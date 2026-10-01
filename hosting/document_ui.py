@@ -102,7 +102,7 @@ def install(app, accounts):
             for path in confined_folder(root, 'document-review').glob('*.md'):
                 _, meta = review_file(root, path.name)
                 record = json.loads(meta.read_text())
-                rows.append({'filename': path.name, 'source': record['source'], 'conversion_version':record.get('conversion_version',1), 'converted_at':record.get('converted_at',0), 'blank_pages': record.get('blank_pages', []),
+                rows.append({'filename': path.name, 'source': record['source'], 'source_id':record.get('source_id'), 'conversion_version':record.get('conversion_version',1), 'converted_at':record.get('converted_at',0), 'blank_pages': record.get('blank_pages', []),
                              'approved': __import__('hosting.document_management',fromlist=['is_approved']).is_approved(root,record,path.read_text())})
             from hosting.document_management import mark_superseded
             mark_superseded(rows)
