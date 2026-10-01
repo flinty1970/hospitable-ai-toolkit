@@ -39,9 +39,34 @@ def retrieve_references(prop, message):
     from hosting.indexing import retrieve
     return retrieve(prop["runtime_dir"], message)
 
+def supply_outcome(message):
+    """Ignore only complete, unambiguous resolved-supply acknowledgements."""
+    normalized = message.replace("’", "'")
+    clauses = [part.strip(" ,–—-") for part in re.split(r"[.!\n]+", normalized) if part.strip(" ,–—-")]
+    resolved = re.compile(
+        r"(?:we|i) (?:found|have|have found|got|have got) enough "
+        r"(?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?))"
+        r"(?: and (?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?)))?"
+        r"(?: in the garage)?(?: to last us)?(?:,? so (?:no need to send more|we don't need any more))?"
+        r"|(?:we|i) found enough in the garage to last us,? so no need to send more",
+        re.I)
+    courtesy = re.compile(
+        r"hi martin|hello martin|thanks(?: so much)?|thank you(?: so much)?"
+        r"|appreciate your help|we appreciate your help|oi ying", re.I)
+    if clauses and any(resolved.fullmatch(c) for c in clauses) and all(
+            resolved.fullmatch(c) or courtesy.fullmatch(c) for c in clauses):
+        return {"action": "ignored", "answer": "", "reason": "Guest confirmed supplies are sufficient; no reply or owner alert"}
+    if re.search(r"\b(?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?))\b", normalized, re.I):
+        return {"action": "review", "answer": "", "reason": "Supply message needs the host to review and arrange any replenishment"}
+    return None
+
+
 def prepare_draft(prop, message):
     if REVIEW_INTENT.search(message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
+    supply = supply_outcome(message)
+    if supply is not None:
+        return supply
     references = retrieve_references(prop, message)
     if not references:
         return {"action": "review", "answer": "", "reason": "Property index is empty or not ready"}
