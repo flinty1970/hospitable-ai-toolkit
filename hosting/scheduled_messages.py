@@ -44,6 +44,11 @@ def reservations(account,pid,page=1):
     result=[]
     for row in rows:
         if not isinstance(row,dict) or property_id(row)!=pid:continue
+        status=row.get('status')
+        if isinstance(status,dict):
+            current=status.get('current',{})
+            status=current.get('category') if isinstance(current,dict) else current
+        if isinstance(status,str) and status.lower() in {'cancelled','canceled'}:continue
         rid=object_id(row.get('id') or row.get('uuid'))
         if not rid:continue
         guest=row.get('guest') or {};guest=guest.get('data',guest) if isinstance(guest,dict) else {}

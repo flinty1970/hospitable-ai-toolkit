@@ -194,4 +194,15 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(self.queue.list('property')[0]['state'],'pending')
 
 
+    def test_cancelled_reservations_are_not_selectable(self):
+        response=Mock(status_code=200)
+        response.json.return_value={'data':[
+            {'id':'cancelled-manual','property_id':'property','platform':'manual','status':'cancelled'},
+            {'id':'cancelled-nested','property_id':'property','status':{'current':{'category':'cancelled'}}},
+            {'id':'active-manual','property_id':'property','platform':'manual','status':'accepted'}], 'meta':{'last_page':1}}
+        with patch.object(scheduling.requests,'get',return_value=response):
+            rows=scheduling.reservations(self.account,'property')['reservations']
+        self.assertEqual([r['id'] for r in rows],['active-manual'])
+
+
 if __name__=='__main__':unittest.main()
