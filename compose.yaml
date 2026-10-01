@@ -11,6 +11,9 @@ services:
     stop_grace_period: 30s
     ports:
       - "127.0.0.1:${HOST_PORT:-8790}:8790"
+      - "${HTTPS_BIND:-127.0.0.1}:${HTTPS_PORT:-9443}:9443"
+    environment:
+      TLS_HOSTS: ${TLS_HOSTS:-localhost,127.0.0.1}
     volumes:
       - type: bind
         source: ${INSTANCE_DIR:?Set an absolute INSTANCE_DIR}/data
@@ -44,3 +47,4 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+

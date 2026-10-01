@@ -489,7 +489,7 @@ PYTHONPATH=tests:. /tmp/toolkit-validation-venv/bin/python -m unittest discover 
 /tmp/toolkit-validation-venv/bin/python scripts/linux_startup_smoke.py
 ```
 
-Semantic-index tests use isolated stubs in this suite; the actual embedding/index dependencies belong to the full Docker image. The clean Linux smoke starts the real supervisor and property worker in a new temporary instance with dummy credentials, no AI key, and processing paused. Ports 8790/9000 must be free; the script refuses occupied ports and stops its own processes. It tests owner routes, webhook authentication/probe, inbox persistence and paused restart. It does not validate Docker image construction, bind-mount permissions, semantic indexing or live integrations.
+Semantic-index tests use isolated stubs in this suite; the actual embedding/index dependencies belong to the full Docker image. The clean Linux smoke starts the real supervisor and property worker in a new temporary instance with dummy credentials, no AI key, and processing paused. Ports 8790/9000/9443 must be free; the script refuses occupied ports and stops its own processes. It tests owner routes, webhook authentication/probe, inbox persistence and paused restart. It does not validate Docker image construction, bind-mount permissions, semantic indexing or live integrations.
 
 On a Linux host with Docker, build a test image and run the separate two-container smoke. It uses temporary data and dummy credentials, not the production instance:
 
@@ -510,3 +510,49 @@ Before enabling automatic replies, verify with a staging/test conversation:
 - A backup verifies and restores to a new paused instance; the original account remains available for rollback.
 
 Existing tests cover staged/mocked message routing, inquiries, source snapshots, review-email delivery, automatic-reply deduplication, ownership, stale-message safeguards, manual cancellation/editing, late/paused scheduling and uncertain-send recovery. Live delivery, provider permissions, public Caddy/TLS reachability and Windows behavior are separate checks, not implied by unit tests.
+
+
+
+### Owner HTTPS and persistent certificates
+
+Containers generate a private self-signed certificate on first startup, stored under
+`data/state/tls`. Set `TLS_HOSTS` in instance.env to comma-separated IP addresses or
+DNS names before first startup (for example `192.168.1.172,localhost,127.0.0.1`).
+The generated certificate lasts one year. It persists across container rebuilds;
+renew it in Settings before expiry. Uploaded certificates are never automatically replaced.
+
+Owner pages and `/admin/*` require HTTPS. The TLS listener is container port 9443;
+set `HTTPS_BIND=0.0.0.0` and `HTTPS_PORT=8790` for LAN access at
+`https://192.168.1.172:8790/settings`. HTTP remains container port 8790, published
+only on host loopback; set `HOST_PORT=8791` and point this toolkit's Caddy webhook
+upstream at `127.0.0.1:8791`. Preserve other Caddy upstreams. Do not publish the
+HTTP listener on all host interfaces. Ports must not collide.
+
+If upgrading an existing LAN deployment, make these port changes and update its
+Caddy upstream together. A custom Compose override exposing HTTP publicly must be
+removed. Browser sign-in is per origin, so sign in again after changing to HTTPS.
+
+Settings -> HTTPS certificate supports generating a replacement, uploading a PEM
+leaf/full-chain plus matching unencrypted PEM key, and downloading only the public
+certificate. All configured addresses must appear exactly in the leaf's SANs;
+wildcard matching is not accepted. Validation checks dates, key matching, server
+usage and OpenSSL loading; it does not establish public trust in an uploaded chain.
+Certificate changes restart the container briefly; processing controls are preserved.
+Private keys have mode 600 and are never returned to the browser. Old certificate
+versions remain in private storage for recovery and are included in instance backups.
+Do not commit or share private keys.
+
+Generated certificates encrypt the connection but require device/browser trust.
+Verify the displayed SHA-256 fingerprint before explicitly trusting the certificate;
+trust behaviour differs by browser and OS. A publicly trusted certificate must be
+issued for the address you use. Public Caddy HTTPS keeps its independent certificate.
+The container TLS listener serves owner pages, not the MCP transport; use Caddy for
+public authenticated webhook/MCP routes. No additional background queues run on TLS.
+
+For the existing account-one LAN installation, after updating the tracked Compose
+file, run `sudo python3 scripts/enable_lan_https.py --instance
+/srv/hospitable-ai/account-one --address 192.168.1.172`. The script validates the
+existing dedicated Caddy webhook handle, builds the image before changing ports,
+backs up instance.env/Caddyfile, verifies HTTPS readiness against the persisted
+certificate, and reloads only the updated Caddy configuration. Do not restore the
+old all-interface HTTP Compose override afterward.

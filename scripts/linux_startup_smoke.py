@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -16,12 +17,16 @@ import urllib.request
 from pathlib import Path
 
 REPO=Path(__file__).resolve().parents[1]
+CERTIFICATE=None
 
 def request(path,token=None,payload=None):
     headers={'Authorization':'Bearer '+token} if token else {}
     data=json.dumps(payload).encode() if payload is not None else None
     if data is not None:headers['Content-Type']='application/json'
-    with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8790'+path,data=data,headers=headers),timeout=3) as response:
+    owner = path in {'/review','/settings','/documents','/scheduled'} or path.startswith('/admin/')
+    base = 'https://127.0.0.1:9443' if owner else 'http://127.0.0.1:8790'
+    context = ssl.create_default_context(cafile=str(CERTIFICATE)) if owner else None
+    with urllib.request.urlopen(urllib.request.Request(base+path,data=data,headers=headers),timeout=3,context=context) as response:
         raw=response.read()
         return json.loads(raw) if 'application/json' in response.headers.get('content-type','') else raw.decode()
 
@@ -32,12 +37,18 @@ def stop(process):
         except subprocess.TimeoutExpired:process.kill();process.wait()
 
 def start(env):
+    global CERTIFICATE
     process=subprocess.Popen([sys.executable,'-m','hosting.container_runtime'],cwd=REPO,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
         for _ in range(60):
             if process.poll() is not None:raise RuntimeError('Supervisor exited')
             try:
-                if request('/ready')['ok']:return process
+                if request('/ready')['ok']:
+                    state=Path(env['TOOLKIT_DATA_DIR'])/'state/tls'
+                    identity=json.loads((state/'active.json').read_text())['id']
+                    CERTIFICATE=state/identity/'certificate.pem'
+                    request('/admin/operations','dummy-admin')
+                    return process
             except (urllib.error.URLError,TimeoutError,ConnectionError):pass
             time.sleep(.25)
         raise RuntimeError('Startup timeout')
@@ -45,10 +56,10 @@ def start(env):
 
 def main():
     if sys.platform!='linux':raise SystemExit('Linux startup test only; Windows is untested.')
-    for port in (8790,9000):
+    for port in (8790,9000,9443):
         with socket.socket() as probe:
             try:probe.bind(('127.0.0.1',port))
-            except OSError:raise SystemExit('Test ports 8790/9000 must be free. Do not stop another instance.')
+            except OSError:raise SystemExit('Test ports 8790/9000/9443 must be free. Do not stop another instance.')
     with tempfile.TemporaryDirectory(prefix='toolkit-clean-') as folder:
         root=Path(folder);data=root/'data';secret_dir=root/'secrets'
         (data/'config').mkdir(parents=True);secret_dir.mkdir()
@@ -60,6 +71,10 @@ def main():
         env.update(TOOLKIT_DATA_DIR=str(data),TOOLKIT_SECRETS_DIR=str(secret_dir),PYTHONPATH=str(REPO),PYTHONDONTWRITEBYTECODE='1')
         process=start(env)
         try:
+            try:
+                urllib.request.urlopen('http://127.0.0.1:8790/settings')
+                raise AssertionError('HTTP owner page accepted')
+            except urllib.error.HTTPError as error: assert error.code == 426
             assert 'Review and webhooks' in request('/review')
             assert request('/admin/operations/probe','dummy-admin',{})['ok']
             event={'action':'message.created','data':{'id':'clean-event','body':'No external calls; paused','sender_type':'guest'}}
@@ -75,3 +90,4 @@ def main():
     print('PASS: clean Linux supervisor startup without AI key; owner routes, local webhook probe, inbox persistence and paused restart. No Docker/image/model/live-provider verification.')
 
 if __name__=='__main__':main()
+

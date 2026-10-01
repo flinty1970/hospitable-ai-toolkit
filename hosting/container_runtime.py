@@ -126,6 +126,9 @@ def main():
         # Configuration errors must not expose secrets in container logs.
         print("Instance configuration failed; check config, mounts, permissions and credentials", file=sys.stderr)
         raise SystemExit(2)
+    from hosting.tls_settings import ensure
+    certificate, private_key = ensure(os.environ["TOOLKIT_DATA_DIR"])
+    os.environ["TOOLKIT_HTTPS_ADMIN"] = "true"
     children = []
     stopping = False
 
@@ -141,7 +144,8 @@ def main():
         children.append(subprocess.Popen([sys.executable, "-m", "hosting.scheduled_messages"], start_new_session=True))
         if account.get("indexing", {}).get("enabled", False):
             children.append(subprocess.Popen([sys.executable, "-m", "hosting.reindex_schedule"], start_new_session=True))
-        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8790", "--no-access-log"], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8790", "--no-access-log", "--no-proxy-headers"], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_tls_app", "--factory", "--host", "0.0.0.0", "--port", "9443", "--no-access-log", "--no-proxy-headers", "--lifespan", "off", "--ssl-certfile", certificate, "--ssl-keyfile", private_key], start_new_session=True))
         restart_request = Path(os.environ["TOOLKIT_DATA_DIR"]) / "state/restart-request.json"
         while not stopping:
             if restart_request.exists() and time.time() - restart_request.stat().st_mtime > 2:
@@ -171,3 +175,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
