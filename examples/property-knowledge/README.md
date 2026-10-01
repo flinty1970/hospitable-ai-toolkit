@@ -7,6 +7,7 @@ Replace every `[PLACEHOLDER]` with a verified fact or remove the unsupported sec
 Suggested guest files:
 
 - `property_facts.md`: occupancy, layout, parking, access limitations and outdoor space.
+- `address_parking.md`: guest-approved address, map/directions, spaces, limits, permits, street restrictions and EV policy.
 - `arrival_departure.md`: arrival, checkout and requests requiring confirmation.
 - `wifi.md`: guest network name, credential location, coverage and workspace.
 - `house_rules.md`: occupancy, visitors, pets, noise, smoking and EV policy.

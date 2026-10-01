@@ -233,6 +233,7 @@ verification.
 | Example file | What to fill in |
 | --- | --- |
 | [property_facts.md](examples/property-knowledge/property_facts.md) | Occupancy, beds, parking, outdoor space and accessibility |
+| [address_parking.md](examples/property-knowledge/address_parking.md) | Guest-approved address, directions, parking spaces and restrictions |
 | [arrival_departure.md](examples/property-knowledge/arrival_departure.md) | Check-in/out, entry method and checkout duties |
 | [wifi.md](examples/property-knowledge/wifi.md) | Guest SSID, password location, coverage and workspace |
 | [house_rules.md](examples/property-knowledge/house_rules.md) | Visitors, pets, smoking, quiet hours and EV policy |
@@ -256,7 +257,7 @@ requirements):
 ```text
 Create separate guest-safe Markdown files from the property facts I provide.
 Use only supplied, confirmed facts; ask about gaps and conflicts.
-Cover property details, check-in/out, Wi-Fi, house rules, rubbish/trash and
+Cover property details, address/directions/parking, check-in/out, Wi-Fi, house rules, rubbish/trash and
 recycling, supplies, appliances, heating/hot water, housekeeping and local area.
 For bins include labels/colours, accepted waste, collection schedule/time,
 collection point and who puts bins out. Never infer local rules from colours.

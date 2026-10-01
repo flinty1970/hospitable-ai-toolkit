@@ -9,6 +9,7 @@ Use only the facts I supply. Do not invent amenities, equipment, opening hours, 
 
 Produce separate files named:
 property_facts.md
+address_parking.md
 arrival_departure.md
 wifi.md
 house_rules.md
@@ -22,6 +23,8 @@ local_area.md
 Adapt the file list to the property; remove topics that do not apply. Use plain Markdown headings and short practical instructions, with one topic per section. Label each file with its filename and place its complete contents in a separate fenced Markdown block, or create downloadable .md files if you can. Include a last-verified date only if I supply one; do not imply that you verified the property.
 
 Keep facts consistent across files and avoid unnecessary repetition. Include the property's timezone for arrival, departure, quiet hours and collection times. State accessibility limitations precisely rather than claiming universal accessibility.
+
+For address and parking, include only the guest-approved postal address, verified map/entrance directions, allocated parking location, vehicle capacity/size limits, costs, permits/reservations, street restrictions and EV policy. Do not publish an address reserved for confirmed bookings into knowledge used for pre-booking inquiries. Do not invent free parking or guarantee an unreserved space.
 
 For Wi-Fi, include the guest SSID, verified service/coverage information and where guests obtain the password. Do not include actual passwords, door/access codes, key-safe combinations, API keys, router administration, private contact details, surveillance records, financial information or internal operations. Exclude home-automation integrations, Home Assistant, scripts, sensors, server/network topology and control logic. Describe only ordinary guest-facing controls.
 
