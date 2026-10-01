@@ -10,7 +10,7 @@ toolkit.example.com {
         reverse_proxy 127.0.0.1:8790
     }
     @owner {
-        path /settings /documents /scheduled /admin/* /ready
+        path /settings /documents /scheduled /review /admin/* /ready
         remote_ip private_ranges
     }
     handle @owner {

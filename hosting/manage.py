@@ -47,9 +47,17 @@ def main():
         # Registry validation inside a worker requires the registry references.
         # These are used only by this trusted process; the selected account is fixed.
         # Use per-worker registries to limit even configuration visibility.
-        for key in {account["api_key_env"], account["webhook_secret_env"],
-                    prop["worker_secret_env"], prop["model_key_env"]}:
+        for key in {account["api_key_env"], account["webhook_secret_env"], prop["worker_secret_env"]}:
             env[key] = os.environ[key]
+        # AI setup can happen after startup. Do not require a Claude key when
+        # this account chooses another provider or has not configured AI yet.
+        from hosting.ai_service import PROVIDERS
+        optional_keys = {prop['model_key_env']}
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+            optional_keys.update(provider['env'] for provider in PROVIDERS.values())
+        for key in optional_keys:
+            if key in os.environ:
+                env[key] = os.environ[key]
         # Only the selected property's effective HA endpoint, when configured.
         from hosting.notifications import channel_config
         ha = channel_config(account, args.property_uuid, "ha")

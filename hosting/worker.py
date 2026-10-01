@@ -56,6 +56,8 @@ def prepare_draft(prop, message):
         raise ValueError("Invalid model response")
     if answer["action"] == "review":
         answer["answer"] = ""
+    # Store the exact retrieved references with the draft for later owner review.
+    answer['sources'] = [{'text': hit.get('text', ''), 'source': hit.get('source', {})} for hit in references]
     return answer
 
 
@@ -117,7 +119,7 @@ def create_app():
             if stored:
                 previous = json.loads(stored[0])
                 if previous.get('action') == 'send_pending':
-                    previous = {'action':'review','answer':'','reason':'Previous guest send outcome is uncertain; inspect conversation before replying'}
+                    previous = {'action':'review','answer':'','reason':'Previous guest send outcome is uncertain; inspect conversation before replying', 'sources': previous.get('sources', [])}
                     db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(previous),message_id))
                     outbox.enqueue(message_id, account_id, property_id, {'account_id':account_id,'property_id':property_id,'property_name':prop['name'],'message_id':message_id,'reason':previous['reason']},db=db)
                 return {"ok": True, "action": "review" if previous.get("action") == "review" else "duplicate", "duplicate": True}
@@ -139,9 +141,10 @@ def create_app():
                 result = {"action": "review", "answer": "", "reason": "Draft generation unavailable"}
         attempted = False
         if result['action'] == 'draft' and controls.effective(account_id, account, property_id)['mode'] == 'automatic':
+            sources = result.get('sources', [])
             attempted = True
             with connect() as db:
-                db.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)', (message_id,json.dumps(payload),json.dumps({'action':'send_pending','answer':result['answer'],'reason':'Guest send in progress'}),time.time()))
+                db.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)', (message_id,json.dumps(payload),json.dumps({'action':'send_pending','answer':result['answer'],'reason':'Guest send in progress','sources':sources}),time.time()))
             try:
                 from hosting.guest_sending import send, SendReview
                 result = send(os.environ['TOOLKIT_DATA_DIR'], account_id, property_id, account, payload, result['answer'], controls)
@@ -149,16 +152,18 @@ def create_app():
                 result = {'action':'review','answer':'','reason':str(error)}
             except Exception:
                 result = {'action':'review','answer':'','reason':'Automatic reply not confirmed; inspect conversation before replying'}
+            result['sources'] = sources
         with connect() as db:
             if attempted:
                 db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(result),message_id))
             else:
                 db.execute("INSERT INTO events VALUES(?,?,?,?)", (message_id, json.dumps(payload), json.dumps(result), time.time()))
-            if result["action"] == "review":
+            if result["action"] in {"review", "draft"}:
                 outbox.enqueue(message_id, account_id, property_id, {
                     "account_id": account_id, "property_id": property_id,
                     "property_name": prop["name"], "message_id": message_id,
                     "reason": result["reason"], "guest_message": message[:1000] if isinstance(message, str) else "",
+                    "draft_answer": result.get('answer', ''), "review_page": "/review",
                 }, db=db)
         return {"ok": True, "action": result["action"], "sent": result["action"] == "sent"}
 

@@ -37,6 +37,7 @@ def wait_ready(base):
 
 def main():
     image = sys.argv[1]
+    with_index = '--with-index' in sys.argv[2:]
     names = []
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -61,8 +62,11 @@ def main():
                 wait_ready(base)
                 settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
                 assert len(settings["properties"]) == 2 and settings["auto_responses_available"]
+                assert request(base, '/admin/operations/probe', {}, token=account_id+'-admin')[1]['ok']
+                assert request(base, '/admin/operations', token=account_id+'-admin')[1]['last_message_received'] is None
+                assert request(base, '/admin/operations/reviews', token=account_id+'-admin')[1]['items'] == []
                 assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "paused"}, token=account_id + "-admin")[1]["mode"] == "disabled"
-                if account_id == "one":
+                if account_id == "one" and with_index:
                     (data / "properties/property-one/docs/guide.md").write_text("Towels for property one are in the blue cupboard.")
                     (data / "properties/property-two/docs/guide.md").write_text("Towels for property two are in the green drawer.")
                     docker("exec", name, "python", "-m", "hosting.cli", "reindex", "property-one")

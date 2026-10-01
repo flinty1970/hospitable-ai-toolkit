@@ -12,7 +12,9 @@ continues independently in [windsor-rag](https://github.com/flinty1970/windsor-r
 
 ## What works
 
-- Durable authenticated message webhook inbox and API-verified property routing.
+- Durable authenticated message webhook inbox, receipt diagnostics and API-verified property routing.
+- Owner review page for drafts, escalations, stored source snapshots and audited handled/reopen decisions.
+- Offline credential-inclusive backup/restore with checksums and paused recovery.
 - A separate draft worker, knowledge index, event ledger and alert outbox per property.
 - Persistent account/property enabled and shadow controls.
 - Optional scoped MCP on the same published port; explicit read/preview/settings grants.
@@ -139,11 +141,10 @@ settings. Resuming wakes pending inbox events; old review events are not replaye
 Automatic replies require explicit enablement at account and property level and a tested owner email connection.
 Email alert switches use existing owner configuration; enabling
 an unconfigured alert channel is rejected. Changing
-timezones/indexing schedules, guest-draft review, and account OAuth login
-still require separate configuration or future UI work.
+timezones/indexing schedules and account OAuth login still require separate configuration or future UI work. Guest drafts and escalations are available on `/review`.
 
-Use `/documents` for each property's PDF review and index update. Both interfaces
-use memory-only bearer tokens and the same trusted LAN/VPN or SSH-tunnel access.
+Use `/documents` for each property's PDF review and index update. Owner interfaces
+share a tab-session bearer token and the same trusted LAN/VPN or SSH-tunnel access.
 Do not publicly expose HTTP admin routes; use HTTPS and access restrictions for
 a public owner portal. The Caddy example keeps admin routes private.
 
@@ -415,3 +416,97 @@ The issuer URL is metadata only; it does not create an authorization server.
 5. In a client that supports bearer-authenticated Streamable HTTP, use the exact `resource_url` and header `Authorization: Bearer YOUR_CLIENT_TOKEN`. First call `list_access`, then `get_settings` or `search` for a granted property. Never paste tokens into guest messages or source documents. Start with a read-only grant when checking a new client.
 
 The automated transport tests verify unauthenticated rejection, tool discovery and property permissions; a successful connection from your actual client and hostname must still be checked after deployment. Token rotation requires a container restart; changing grants in `mcp_clients.json` is read on each tool call. Remove a client's access by setting its `enabled` to `false`.
+
+
+
+## Webhook setup and operational review
+
+Open `/review` (also linked from every owner page). It shares the current tab's admin sign-in. Owner APIs require the admin bearer token and reject cross-origin mutations; responses are not cached. Add `/review` to any existing Caddy owner-path allowlist, as shown in `examples/Caddyfile.owner.example`. Owner access remains restricted to the trusted LAN/VPN.
+
+The connection section shows the last authenticated message receipt, last guest-message receipt, account processing mode, tested-email readiness, durable inbox counts and email-outbox counts. Duplicate deliveries update the receipt timestamp without duplicating inbox events. A receipt means the handler accepted a request bearing the configured URL token; it is not independent cryptographic proof of Hospitable's identity. It also does not prove that the message was drafted or sent. Check the queue/review status.
+
+1. Set up a reachable public **HTTPS** hostname and the account webhook route through Caddy. Hospitable cannot deliver to your server's `127.0.0.1` address.
+2. On `/review`, expand webhook setup, enter the HTTPS origin and reveal the private destination URL. It uses this instance's account ID and configured webhook secret. The page formats the URL without connecting to that user-entered host.
+3. In Hospitable, open Apps / Integrations → Webhooks, create a v2 webhook, choose **Messages**, paste the URL and save. See [Hospitable's webhook instructions](https://help.hospitable.com/en/articles/10008203-webhooks-for-reservations-properties-messages-and-reviews).
+4. Keep the toolkit paused or in **Draft only** while testing. Hospitable's Test button may deliver a real historical message; an unseen replay may enter processing. Known message IDs are deduplicated. Do not test with automatic replies enabled.
+5. Run Hospitable's Test, then refresh receipt status on `/review`. Confirm its timestamp advanced and inspect the pending/review records. Only `message.created` events enter the message inbox.
+
+**Test local handler** checks the actual handler with a rejected token and an accepted non-message probe. It queues no guest event and makes no external calls. It does **not** verify DNS, TLS, reverse proxy, firewall or delivery from Hospitable. Its timestamp is stored separately from real message receipts.
+
+The review list combines property draft/review events, unresolved gateway events and uncertain scheduled sends. Choose a property, inspect the guest question, draft/reason, conversation identifier and exact retrieved reference snapshot (for newly generated drafts). Older records and incidents resolved before retrieval may have no stored sources. The list reads at most 200 recent records per property/source and pages the filtered results in groups of 50; use a protected database export for a complete historical archive.
+
+**Copy text** copies/selects the draft. Open Hospitable, locate that conversation, check for newer replies and send there. **Mark handled** and **Reopen review** only save an audited toolkit disposition with an optional owner note. They do not send, retry, cancel or change Hospitable messages or suppress already queued email alerts. In-flight/uncertain sends require inspection in Hospitable before sending again. A changed record invalidates the old handled decision. Draft-only messages now enqueue owner-review emails as well as appearing on the review page. Automatic replies that succeed do not require owner approval.
+
+## Offline backup and restore (Linux)
+
+Backups include **credentials and guest data**: installed secrets, browser AI/SMTP/MCP credentials, configuration, approved documents, source PDFs, indexes, review history, controls, deduplication/send ledgers and scheduled queues. Store archives privately outside the instance folder, copy them to protected off-host storage and encrypt them using your backup system. The tool creates mode-600 archives but does not encrypt them. SHA-256 checksums detect damage; they do not authenticate an archive from an untrusted source. The downloadable embedding model cache is excluded and can be downloaded again.
+
+Run from the repository on the Docker host. Substitute your actual instance directory/project. These commands intentionally stop **this toolkit account** for a consistent snapshot; they do not stop Windsor's separate services.
+
+```bash
+cd /home/mflint/hospitable-ai-toolkit
+sudo docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one stop
+sudo python3 -m hosting.backup backup \
+  --instance-dir /srv/hospitable-ai/account-one \
+  --project account-one \
+  --output /srv/hospitable-ai-backups/account-one-backup.tar.gz
+sudo python3 -m hosting.backup verify \
+  --archive /srv/hospitable-ai-backups/account-one-backup.tar.gz
+sudo docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one up -d
+```
+
+The backup command refuses to overwrite an archive, refuses symlinks/special files, checks SQLite integrity, and checks for running containers mounting the instance (including differently named projects). Choose a new filename for each backup. If backup fails after stopping, investigate and restart the original account when appropriate.
+
+Restore into a **new, nonexistent directory**:
+
+```bash
+sudo python3 -m hosting.backup restore \
+  --archive /srv/hospitable-ai-backups/account-one-backup.tar.gz \
+  --destination /srv/hospitable-ai/account-one-restored
+```
+
+The restore verifies every checksum before writing, rejects unsafe archive paths/links, refuses to overwrite an existing instance and pauses the account in both configuration and persistent controls. Review decisions, event deduplication and send ledgers remain intact. It does not start a container. Files are private but owned by the user running restore; assign the restored directory to your intended service UID/GID before starting.
+
+Edit restored `instance.env` so `INSTANCE_DIR` points to the new directory, `APP_UID/APP_GID` match file ownership, and `HOST_PORT` does not conflict. Do not run the original and restored account simultaneously against the same webhook/guest conversations. Start the restored account with the appropriate Compose project, verify `/ready`, email setup, property knowledge, review history and queue status. Pending manual schedules are held while paused. Before enabling processing, inspect overdue/uncertain sends in Hospitable; resuming processing can deliver pending alerts and still-future manual schedules. Resume in **Draft only**, then explicitly opt into automatic replies only after completing the live checks below.
+
+The backup module uses Python's standard library and needs no toolkit virtualenv. Docker access is required for the backup stop guard. Windows backup/restore remains untested.
+
+## Validation and release checklist
+
+The isolated suite runs without real guest sends:
+
+```bash
+PYTHONPATH=tests:. python -m unittest discover -s tests
+python scripts/linux_startup_smoke.py
+```
+
+Create a clean runtime environment before running these checks:
+
+```bash
+python3 -m venv /tmp/toolkit-validation-venv
+/tmp/toolkit-validation-venv/bin/pip install -r requirements-runtime.txt
+PYTHONPATH=tests:. /tmp/toolkit-validation-venv/bin/python -m unittest discover -s tests
+/tmp/toolkit-validation-venv/bin/python scripts/linux_startup_smoke.py
+```
+
+Semantic-index tests use isolated stubs in this suite; the actual embedding/index dependencies belong to the full Docker image. The clean Linux smoke starts the real supervisor and property worker in a new temporary instance with dummy credentials, no AI key, and processing paused. Ports 8790/9000 must be free; the script refuses occupied ports and stops its own processes. It tests owner routes, webhook authentication/probe, inbox persistence and paused restart. It does not validate Docker image construction, bind-mount permissions, semantic indexing or live integrations.
+
+On a Linux host with Docker, build a test image and run the separate two-container smoke. It uses temporary data and dummy credentials, not the production instance:
+
+```bash
+sudo docker build -t hospitable-ai-toolkit:smoke .
+sudo python3 scripts/container_smoke.py hospitable-ai-toolkit:smoke
+```
+
+The default Docker smoke does not download/test embeddings. To also test semantic indexing, add `--with-index`; that requires network access to download the CPU embedding model. Neither test sends a guest message or calls an AI/SMTP provider. Docker build/startup must be run on a Docker-enabled host; this development workspace has no Docker daemon. Windows / Docker Desktop remains untested.
+
+Before enabling automatic replies, verify with a staging/test conversation:
+
+- A real v2 booking guest-message webhook is received, associated with the correct managed property and shown as a draft with source documents.
+- A real pre-booking inquiry webhook resolves to the correct property, including its actual inquiry/conversation identifiers. The generic inquiry path is covered with isolated fixtures; provider webhook shape still needs live evidence.
+- Owner SMTP test is accepted and received; a draft and a host-decision escalation reach the owner's inbox.
+- With sending switches off, no guest message is sent. With both switches explicitly enabled in staging, one fresh supported answer goes to the correct thread; duplicates and newer host replies block another send.
+- A staging manual schedule sends once; cancelling before delivery prevents sending. Restart preserves pending/cancelled state. A timeout/crash becomes review with no blind retry; paused/late sends are held or escalated.
+- A backup verifies and restores to a new paused instance; the original account remains available for rollback.
+
+Existing tests cover staged/mocked message routing, inquiries, source snapshots, review-email delivery, automatic-reply deduplication, ownership, stale-message safeguards, manual cancellation/editing, late/paused scheduling and uncertain-send recovery. Live delivery, provider permissions, public Caddy/TLS reachability and Windows behavior are separate checks, not implied by unit tests.
