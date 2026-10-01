@@ -40,3 +40,28 @@ class PreviewTests(unittest.TestCase):
             with patch('hosting.indexing.retrieve',return_value=[{'text':'Press power','source':{'source':'shower.md'}}]),patch('hosting.worker.prepare_draft',return_value={'action':'draft','answer':'Press power','reason':'Guide'}) as draft,patch('hosting.guest_sending.send') as send:
                 r=client.post('/admin/documents/p/test-question',headers={'Authorization':'Bearer admin'},json={'question':'Shower?'})
                 self.assertEqual(r.status_code,200);self.assertFalse(r.json()['sent']);self.assertEqual(r.json()['sources'][0]['source']['source'],'shower.md');draft.assert_called_once();send.assert_not_called()
+
+class PDFDeleteTests(unittest.TestCase):
+    def test_pdf_reviews_knowledge_and_rollback(self):
+        import json
+        from hosting.document_management import delete_pdf, pdf_listing
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            for name in ['docs','source-documents','document-review']: (root/name).mkdir()
+            pdf=root/'source-documents/guide.pdf';pdf.write_bytes(b'%PDF-original')
+            md=root/'docs/pdf-abcd.md';md.write_text('Shower guide')
+            review=root/'document-review/converted.md';review.write_text('Shower guide')
+            meta=review.with_suffix('.json');meta.write_text(json.dumps({'source':'guide.pdf','source_id':'abcd'}))
+            value={'confirmed':True,'revision':pdf_listing(root)[0]['revision']}
+            def fail(*args):raise RuntimeError('failed')
+            with self.assertRaises(RuntimeError):delete_pdf(root,'guide.pdf',value,fail)
+            self.assertTrue(all(p.exists() for p in [pdf,md,review,meta]))
+            self.assertEqual(delete_pdf(root,'guide.pdf',value,lambda *args:None)['chunks'],0)
+            self.assertFalse(any(p.exists() for p in [pdf,md,review,meta]))
+            self.assertEqual(pdf_listing(root),[])
+    def test_bad_filename_and_stale_revision(self):
+        from hosting.document_management import pdf_file,delete_pdf
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'source-documents').mkdir();(root/'source-documents/g.pdf').write_bytes(b'pdf')
+            with self.assertRaises(ValueError):pdf_file(root,'../g.pdf')
+            with self.assertRaises(ValueError):delete_pdf(root,'g.pdf',{'confirmed':True,'revision':'stale'})

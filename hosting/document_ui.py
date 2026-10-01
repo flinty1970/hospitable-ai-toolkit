@@ -218,3 +218,20 @@ def install(app, accounts):
             from hosting.worker import prepare_draft
             return {'sources':retrieve(root,question.strip()),'result':prepare_draft(properties[pid],question.strip()),'sent':False}
         return await operation(root,preview)
+
+    @app.get('/admin/documents/{pid}/pdfs')
+    async def pdfs(pid: str, request: Request):
+        authorize(request)
+        from hosting.document_management import pdf_listing
+        root=root_for(pid)
+        return await operation(root,lambda:{'documents':pdf_listing(root)})
+
+    @app.post('/admin/documents/{pid}/delete-pdf')
+    async def remove_pdf(pid: str, request: Request):
+        authorize(request)
+        from hosting.document_management import delete_pdf
+        try: value=json.loads(await body(request,4096))
+        except (ValueError,UnicodeError): raise HTTPException(400,'Invalid JSON')
+        if not isinstance(value,dict): raise HTTPException(400,'Invalid request')
+        root=root_for(pid)
+        return await operation(root,lambda:delete_pdf(root,request.query_params.get('filename'),value))
