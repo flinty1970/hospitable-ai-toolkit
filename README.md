@@ -6,9 +6,10 @@ One **Hospitable account per container**, with multiple selected properties.
 Another account uses the same image in another container, on another host port,
 with its own configuration, credentials and mounted data folder.
 
-This is a standalone draft/review foundation. It contains no Windsor knowledge,
-Windsor scheduler or personal deployment configuration. Martin's original service
-continues independently in [windsor-rag](https://github.com/flinty1970/windsor-rag).
+This is an independently maintained community project, not an official Hospitable product.
+It provides self-hosted property knowledge, guest drafts and owner review. Start in
+Draft only and complete the live validation checklist before enabling automatic replies.
+AI API usage and hosting may incur charges; chat subscriptions do not include API usage.
 
 ## What works
 
@@ -17,8 +18,8 @@ continues independently in [windsor-rag](https://github.com/flinty1970/windsor-r
 - Offline credential-inclusive backup/restore with checksums and paused recovery.
 - A separate draft worker, knowledge index, event ledger and alert outbox per property.
 - Persistent account/property enabled and shadow controls.
-- Optional scoped MCP on the same published port; explicit read/preview/settings grants.
-- Independent optional HA review alerts and owner-specific msmtp email, with property overrides.
+- Optional scoped MCP through the HTTP gateway behind Caddy HTTPS; explicit property grants.
+- Owner email alerts with browser SMTP setup or installer msmtp configuration. Home Assistant integration is unavailable in community containers.
 - Manual or optional daily ingestion inside the container, with atomic index generation changes.
 - Read-only application/configuration/secret mounts, non-root processes and loopback host ports.
 
@@ -33,7 +34,7 @@ Each account's host folder contains:
 account-one/
   instance.env                 # Compose settings, not API credentials
   secrets/
-    credentials.env            # owner API/model/webhook/admin/MCP/HA credentials
+    credentials.env            # owner API/model/webhook/admin/MCP credentials
     msmtprc                    # owner's SMTP credentials/configuration
   data/
     config/
@@ -92,15 +93,20 @@ chmod 600 /srv/hospitable-ai/account-one/secrets/*
 Create `/srv` folders with sudo if necessary, then assign them to the intended
 service user. Set APP_UID/APP_GID to that user's numeric IDs and match the mounted
 files' ownership. Do not make credentials world-readable to solve permissions.
-Edit the copied files **before startup**:
+Edit the copied files **before startup**. Defaults publish HTTP on loopback port
+8790 and owner HTTPS on loopback port 9443. Set `TLS_HOSTS` before first startup
+for any additional address you will use. See Owner HTTPS below for LAN access.
+
+
 
 1. The setup example starts with no imported properties. After startup, open
    `/settings`, sign in, and discover/select properties using this account's PAT.
 2. Alternatively, use `examples/account.json` to configure property UUIDs manually.
 3. Put this account's PAT/model keys and distinct randomly generated tokens in
    `secrets/credentials.env`; this file is parsed as literal assignments, not shell code.
-4. Set this owner's SMTP server, user, password and sender in `msmtprc`, and real
-   sender/recipients in `account.json`. Email defaults on in the example, HA off.
+4. You can configure SMTP in `/settings` after startup and test/save it before
+   enabling processing. Installer msmtp configuration is an alternative; a tested
+   browser email connection is still required to enable community processing.
 5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy Windsor's complete
    `/etc/*.env` files; they contain unrelated credentials and settings.
 
@@ -119,7 +125,10 @@ not make Docker automatically restart a still-running container.
 
 ## Browser account setup and controls
 
-Open `/settings` on the same toolkit port and sign in with the admin token.
+Open `https://localhost:9443/settings` on the Docker host and sign in with the admin token.
+The default HTTP port 8790 is for webhook/MCP traffic and health checks; it rejects
+owner pages. For remote access use the HTTPS SSH tunnel below or configure the
+LAN HTTPS listener. Generated certificates require explicit browser/device trust.
 **Refresh Hospitable properties** lists names, IDs and timezones from this
 account's PAT. Select properties and import them; membership is verified again
 server-side against the account API. No guest documents or reservations are
@@ -162,20 +171,21 @@ instructions, access codes and private information must be removed during review
 The browser document interface is at `/documents` on the toolkit port. Sign in
 with `TOOLKIT_ADMIN_SECRET`, choose the property, upload a PDF, review/edit its
 Markdown, save, confirm it is guest-safe, approve, then click **Update property
-knowledge**. Tokens stay in page memory, never URLs or browser storage. A reload
-or disconnect requires signing in again. Review text is shown as plain text;
+knowledge**. Owner pages share the bearer token within the current tab session; it is not
+placed in URLs. Disconnect clears the session sign-in. Review text is shown as plain text;
 PDF/Markdown content is never executed as HTML.
 
 For a remote trial, forward the loopback port from your own computer:
 
 ```bash
-ssh -N -L 8790:127.0.0.1:8790 mflint@YOUR_AI_SERVER
+ssh -N -L 9443:127.0.0.1:9443 YOUR_USER@YOUR_SERVER
 ```
 
-Then open `http://127.0.0.1:8790/documents` on that computer. Obtain the admin token
-locally from the instance credentials file; never share it in chat. The existing
-Caddy example deliberately does not expose admin routes. Keep it that way for
-this trial. A public owner portal needs separate HTTPS/access configuration.
+Then open `https://localhost:9443/documents` on that computer. This assumes the
+default host `HTTPS_PORT=9443`; adjust the tunnel's remote port for other deployments.
+Verify and trust the generated certificate as described below. Obtain the admin
+token locally from the instance credentials file; never share it in chat.
+The Caddy example exposes only webhook/MCP routes; owner pages use the container's HTTPS listener.
 
 Uploads are limited to 50 MB and selected properties. Existing source filenames
 are not overwritten; rename an updated PDF before uploading. Approval only copies
@@ -311,23 +321,23 @@ Account defaults and property overrides select each owner's endpoints and mail
 settings. Parent and property enabled permissions intersect; parent or property
 shadow mode keeps processing in shadow. Scoped MCP setting changes are audited.
 
-- HA's master `home_assistant.enabled` gates all hosted HA actions. Review alerts
-  additionally require `notifications.ha.enabled` and a `webhook_url_env` credential.
-  No VPN/HA is needed when disabled. Configured HA may use a private reachable URL.
+- Home Assistant actions and alerts are unavailable in community containers.
+  Legacy configuration fields remain for compatibility; enabling them does not enable HA integration.
 - Heating is separately gated, but `heating_available` is false in this version.
   These controls cannot disable existing external HA or router automations.
 - Email is independent of HA. Account/property `notifications.email` specify
   `enabled`, absolute `msmtp_config_file`, `msmtp_account`, `sender` and `recipients`.
   Use mounted owner-specific files; there is no personal mailbox fallback.
-- Human-review results queue persistent alerts; normal shadow drafts do not alert.
-  Channels retry independently. Disabled alerts remain pending and may deliver
-  when re-enabled. Ambiguous HTTP/SMTP acceptance can duplicate an alert.
+- Drafts and human-review results queue persistent owner email alerts. Ignored
+  messages do not queue alerts. Pending alerts may deliver when processing resumes;
+  ambiguous SMTP acceptance can duplicate an alert.
 
 ## Second account
 
 Create `/srv/hospitable-ai/account-two` with its own files and data. Set a different
-account ID, PAT, tokens and selected properties, plus `HOST_PORT=8791` in its
-instance settings. Start with `-p account-two`. Reuse the same image; internal
+account ID, PAT, tokens and selected properties. Choose unused host ports for
+both `HOST_PORT` and `HTTPS_PORT` (for example 8792 and 9444); do not reuse ports
+already assigned to another account. Start with `-p account-two`. Reuse the same image; internal
 ports remain the same because each container has its own network namespace.
 Add only its distinct webhook/MCP routes to Caddy. Do not reuse the first
 account's data directory or credentials. Bind ports to loopback as supplied.
@@ -357,9 +367,10 @@ and smoke-tests two simultaneous containers, authentication, restart persistence
 and a real embedding/index/query against dummy curated property facts.
 It does not validate real guest generation or a user's SMTP/HA deployment.
 
-Before real user onboarding: stage real payloads and knowledge, confirm signing,
-add missed-event reconciliation, guest-draft review UI, retention/deletion policy and operational
-monitoring. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
+Before enabling automatic replies: stage real payloads and knowledge and complete
+the live checks below. Webhooks use a configured URL token, not verified provider
+signatures. Missed-event reconciliation, retention/deletion policy and operational
+monitoring need further work; the guest-draft review UI is implemented. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
 by publishing this repository.
 
 ### AI provider and model settings
@@ -422,9 +433,9 @@ Use your actual container name (`docker ps --format "{{.Names}}"`). Linux instal
 
 ### Caddy HTTPS setup on Linux or Windows
 
-Caddy runs on the host in these instructions, proxying the toolkit's loopback Docker port. Keep the toolkit port mapping `127.0.0.1:8790:8790`; do not expose port 8790 to the internet. Caddy in another container needs a shared Docker network and service-name upstream instead: its `127.0.0.1` is not the host. Use one Caddy installation for an existing site; do not start a second server competing for ports 80/443.
+Caddy runs on the host in these instructions, proxying the toolkit's loopback Docker port. Keep the HTTP gateway loopback-only (default `127.0.0.1:8790:8790`). If LAN HTTPS uses host port 8790, move the HTTP host port to 8791 and update the webhook/MCP upstreams accordingly. Caddy in another container needs a shared Docker network and service-name upstream instead: its `127.0.0.1` is not the host. Use one Caddy installation for an existing site; do not start a second server competing for ports 80/443.
 
-Choose a hostname you control and point its DNS to the Caddy host. For ordinary public automatic certificates, TCP ports 80 and 443 must reach Caddy, with firewall/router forwarding as needed. A private-only hostname needs a suitable DNS challenge setup or Caddy's internal CA trusted on each client instead. The example `examples/Caddyfile.owner.example` allows public authenticated webhook/MCP routes but limits owner pages/APIs to private-source IP addresses. Use a trusted LAN/VPN for owner access. No access log is enabled, to avoid storing webhook URL tokens. If an upstream proxy hides real client IPs, do not rely on the example's source-IP check without configuring trusted proxy handling.
+Choose a hostname you control and point its DNS to the Caddy host. For ordinary public automatic certificates, TCP ports 80 and 443 must reach Caddy, with firewall/router forwarding as needed. A private-only hostname needs a suitable DNS challenge setup or Caddy's internal CA trusted on each client instead. The example `examples/Caddyfile.owner.example` allows public authenticated webhook/MCP routes and denies other paths. Owner pages/APIs use the separate container HTTPS listener. Use a trusted LAN/VPN for owner access. No access log is enabled, to avoid storing webhook URL tokens. If you add your own owner reverse-proxy configuration, it must reach the container TLS listener with certificate verification and enforce the intended access restrictions; proxying owner routes to the HTTP gateway returns 426.
 
 **Linux (Debian/Ubuntu).** Install Caddy using the [official package instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian); that package provisions its systemd service. Edit `/etc/caddy/Caddyfile`, adding the example site after replacing `toolkit.example.com` and the internal account ID. Preserve existing sites such as Windsor. Validate before reloading:
 
@@ -451,7 +462,7 @@ sc.exe start caddy
 
 Allow the required ports through Windows Firewall for your deployment. The service account needs access to its configuration and certificate storage; protect these files. Reload changed configuration with `C:\caddy\caddy.exe reload --config C:\caddy\Caddyfile --adapter caddyfile`. See [Caddy's service documentation](https://caddyserver.com/docs/running#windows-service) for sc.exe/WinSW alternatives and account/storage considerations. The Windows service instructions follow Caddy documentation but have not been tested in this project's Linux CI.
 
-After setup, open `https://YOUR_HOSTNAME/settings` or `/scheduled` from the allowed LAN/VPN. Verify that access from an untrusted public IP is denied for `/admin/*`; webhook/MCP authentication remains enforced by the application. Caddy does not enable MCP or configure Hospitable outbound webhooks by itself.
+After setup, use the container HTTPS URL or SSH tunnel for owner pages. The example returns 403 for `/settings` and `/admin/*` at the public Caddy hostname; webhook/MCP authentication remains enforced by the application. Caddy does not enable MCP or configure Hospitable outbound webhooks by itself.
 
 ### Provisioning MCP access
 
@@ -480,7 +491,7 @@ The automated transport tests verify unauthenticated rejection, tool discovery a
 
 ## Webhook setup and operational review
 
-Open `/review` (also linked from every owner page). It shares the current tab's admin sign-in. Owner APIs require the admin bearer token and reject cross-origin mutations; responses are not cached. Add `/review` to any existing Caddy owner-path allowlist, as shown in `examples/Caddyfile.owner.example`. Owner access remains restricted to the trusted LAN/VPN.
+Open `/review` (also linked from every owner page). It shares the current tab's admin sign-in. Owner APIs require the admin bearer token and reject cross-origin mutations; responses are not cached. Use the container HTTPS listener or SSH tunnel for `/review`; the supplied Caddy example exposes only webhook/MCP routes.
 
 The connection section shows the last authenticated message receipt, last guest-message receipt, account processing mode, tested-email readiness, durable inbox counts and email-outbox counts. Duplicate deliveries update the receipt timestamp without duplicating inbox events. A receipt means the handler accepted a request bearing the configured URL token; it is not independent cryptographic proof of Hospitable's identity. It also does not prove that the message was drafted or sent. Check the queue/review status.
 
@@ -488,7 +499,7 @@ The connection section shows the last authenticated message receipt, last guest-
 2. On `/review`, expand webhook setup, enter the HTTPS origin and reveal the private destination URL. It uses this instance's account ID and configured webhook secret. The page formats the URL without connecting to that user-entered host.
 3. In Hospitable, open Apps / Integrations → Webhooks, create a v2 webhook, choose **Messages**, paste the URL and save. See [Hospitable's webhook instructions](https://help.hospitable.com/en/articles/10008203-webhooks-for-reservations-properties-messages-and-reviews).
 4. Keep the toolkit paused or in **Draft only** while testing. Hospitable's Test button may deliver a real historical message; an unseen replay may enter processing. Known message IDs are deduplicated. Do not test with automatic replies enabled.
-5. Run Hospitable's Test, then refresh receipt status on `/review`. Confirm its timestamp advanced and inspect the pending/review records. Only `message.created` events enter the message inbox.
+5. Run Hospitable's Test, then refresh receipt status on `/review`. If the test delivers a `message.created` event, confirm its timestamp advanced and inspect the pending/review records. A successful probe or other event type need not advance message receipt timestamps. Only `message.created` events enter the message inbox.
 
 **Test local handler** checks the actual handler with a rejected token and an accepted non-message probe. It queues no guest event and makes no external calls. It does **not** verify DNS, TLS, reverse proxy, firewall or delivery from Hospitable. Its timestamp is stored separately from real message receipts.
 
@@ -503,7 +514,7 @@ Backups include **credentials and guest data**: installed secrets, browser AI/SM
 Run from the repository on the Docker host. Substitute your actual instance directory/project. These commands intentionally stop **this toolkit account** for a consistent snapshot; they do not stop Windsor's separate services.
 
 ```bash
-cd /home/mflint/hospitable-ai-toolkit
+cd ~/hospitable-ai-toolkit
 sudo docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one stop
 sudo python3 -m hosting.backup backup \
   --instance-dir /srv/hospitable-ai/account-one \
@@ -526,7 +537,7 @@ sudo python3 -m hosting.backup restore \
 
 The restore verifies every checksum before writing, rejects unsafe archive paths/links, refuses to overwrite an existing instance and pauses the account in both configuration and persistent controls. Review decisions, event deduplication and send ledgers remain intact. It does not start a container. Files are private but owned by the user running restore; assign the restored directory to your intended service UID/GID before starting.
 
-Edit restored `instance.env` so `INSTANCE_DIR` points to the new directory, `APP_UID/APP_GID` match file ownership, and `HOST_PORT` does not conflict. Do not run the original and restored account simultaneously against the same webhook/guest conversations. Start the restored account with the appropriate Compose project, verify `/ready`, email setup, property knowledge, review history and queue status. Pending manual schedules are held while paused. Before enabling processing, inspect overdue/uncertain sends in Hospitable; resuming processing can deliver pending alerts and still-future manual schedules. Resume in **Draft only**, then explicitly opt into automatic replies only after completing the live checks below.
+Edit restored `instance.env` so `INSTANCE_DIR` points to the new directory, `APP_UID/APP_GID` match file ownership, and both `HOST_PORT` and `HTTPS_PORT` do not conflict. Do not run the original and restored account simultaneously against the same webhook/guest conversations. Start the restored account with the appropriate Compose project, verify `/ready`, email setup, property knowledge, review history and queue status. Pending manual schedules are held while paused. Before enabling processing, inspect overdue/uncertain sends in Hospitable; resuming processing can deliver pending alerts and still-future manual schedules. Resume in **Draft only**, then explicitly opt into automatic replies only after completing the live checks below.
 
 The backup module uses Python's standard library and needs no toolkit virtualenv. Docker access is required for the backup stop guard. Windows backup/restore remains untested.
 
@@ -597,7 +608,7 @@ certificate. All configured addresses must appear exactly in the leaf's SANs;
 wildcard matching is not accepted. Validation checks dates, key matching, server
 usage and OpenSSL loading; it does not establish public trust in an uploaded chain.
 Certificate changes restart the container briefly; processing controls are preserved.
-Private keys have mode 600 and are never returned to the browser. Old certificate
+Private keys have mode 600 and are never returned by the settings API. Old certificate
 versions remain in private storage for recovery and are included in instance backups.
 Do not commit or share private keys.
 
@@ -608,7 +619,8 @@ issued for the address you use. Public Caddy HTTPS keeps its independent certifi
 The container TLS listener serves owner pages, not the MCP transport; use Caddy for
 public authenticated webhook/MCP routes. No additional background queues run on TLS.
 
-For the existing account-one LAN installation, after updating the tracked Compose
+For an existing Linux account-one deployment with a dedicated `handle @toolkit_webhook`
+block in `/etc/caddy/Caddyfile`, after updating the tracked Compose
 file, run `sudo python3 scripts/enable_lan_https.py --instance
 /srv/hospitable-ai/account-one --address 192.168.1.172`. The script validates the
 existing dedicated Caddy webhook handle, builds the image before changing ports,
