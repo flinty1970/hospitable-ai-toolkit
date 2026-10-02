@@ -1,0 +1,14 @@
+{
+  "account": {
+    "id": "account-one",
+    "enabled": true,
+    "shadow": true,
+    "model_key_env": "ANTHROPIC_API_KEY",
+    "model": "claude-sonnet-4-6",
+    "home_assistant": {"enabled": false, "heating_enabled": false},
+    "notifications": {"ha": {"enabled": false}, "email": {"enabled": false}},
+    "indexing": {"enabled": false, "daily_at": "00:00", "timezone": "UTC"},
+    "properties": {}
+  },
+  "mcp": {"enabled": false}
+}

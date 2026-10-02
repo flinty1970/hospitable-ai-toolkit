@@ -6,3 +6,5 @@ anthropic>=0.40,<1
 mcp>=1.30,<2
 tzdata>=2024.1
 pypdf>=6,<7
+
+cryptography>=46,<47

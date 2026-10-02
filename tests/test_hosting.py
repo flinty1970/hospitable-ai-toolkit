@@ -337,6 +337,13 @@ class HostingTests(unittest.TestCase):
             response = client.post("/toolkit/mcp", headers={**headers, "Authorization": "Bearer owner-token"}, json=request)
             allowed = client.post("/toolkit/mcp", headers={**headers, "Authorization": "Bearer owner-token"},
                 json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "list_access", "arguments": {}}})
+            listed = client.post("/toolkit/mcp", headers={**headers, "Authorization": "Bearer owner-token"},
+                json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}})
+            names = {tool['name'] for tool in listed.json()['result']['tools']}
+            self.assertTrue({'list_reservations','scheduled_messages','schedule_message','cancel_scheduled_message'} <= names)
+            forbidden_schedule = client.post("/toolkit/mcp", headers={**headers, "Authorization": "Bearer owner-token"},
+                json={"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"schedule_message","arguments":{"account_id":"a","property_id":"property-a","reservation_id":"reservation","local_time":"2099-01-01T12:00","message":"Hello","confirm_send":True}}})
+            self.assertTrue(forbidden_schedule.json()['result']['isError'])
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["result"]["isError"])
         self.assertNotIn("runtime_dir", response.text)

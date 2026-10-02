@@ -16,7 +16,8 @@ RUN pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu \
 COPY hosting ./hosting
 COPY ingest.py ./
 USER toolkit
-EXPOSE 8790
+EXPOSE 8790 9443
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/ready', timeout=8)"
 ENTRYPOINT ["/usr/bin/tini", "--", "python", "-m", "hosting.container_runtime"]
+

@@ -1,6 +1,7 @@
 """Real Docker smoke; dummy credentials, no provider/model/SMTP calls."""
 import json
 import os
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -15,12 +16,18 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
+HTTPS_BASES = {}
+
 def request(base, path, payload=None, token=None):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = json.dumps(payload).encode() if payload is not None else None
-    with urllib.request.urlopen(urllib.request.Request(base + path, data=data, headers=headers), timeout=10) as response:
+    context = None
+    if path.startswith('/admin/'):
+        base, certificate = HTTPS_BASES[base]
+        context = ssl.create_default_context(cafile=str(certificate))
+    with urllib.request.urlopen(urllib.request.Request(base + path, data=data, headers=headers), timeout=10, context=context) as response:
         return response.status, json.load(response)
 
 
@@ -37,6 +44,7 @@ def wait_ready(base):
 
 def main():
     image = sys.argv[1]
+    with_index = '--with-index' in sys.argv[2:]
     names = []
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -55,11 +63,20 @@ def main():
                 credentials.chmod(0o600)
                 name = "toolkit-smoke-" + uuid.uuid4().hex[:12]
                 names.append(name)
-                docker("run", "-d", "--name", name, "--user", f"{os.getuid()}:{os.getgid()}", "-p", "127.0.0.1::8790", "-v", f"{data}:/data", "-v", f"{data / 'config'}:/data/config:ro", "-v", f"{secret_dir}:/run/toolkit-secrets:ro", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m,mode=1777", "--cap-drop", "ALL", image)
+                docker("run", "-d", "--name", name, "--user", f"{os.getuid()}:{os.getgid()}", "-p", "127.0.0.1::8790", "-p", "127.0.0.1::9443", "-v", f"{data}:/data", "-v", f"{data / 'config'}:/data/config:ro", "-v", f"{secret_dir}:/run/toolkit-secrets:ro", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m,mode=1777", "--cap-drop", "ALL", image)
                 port = docker("port", name, "8790/tcp").split(":")[-1]
                 base = "http://127.0.0.1:" + port
                 wait_ready(base)
-                if account_id == "one":
+                tls_port = docker("port", name, "9443/tcp").split(":")[-1]
+                tls_state = json.loads((data / 'state/tls/active.json').read_text())
+                HTTPS_BASES[base] = ('https://127.0.0.1:' + tls_port, data / 'state/tls' / tls_state['id'] / 'certificate.pem')
+                settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
+                assert len(settings["properties"]) == 2 and settings["auto_responses_available"]
+                assert request(base, '/admin/operations/probe', {}, token=account_id+'-admin')[1]['ok']
+                assert request(base, '/admin/operations', token=account_id+'-admin')[1]['last_message_received'] is None
+                assert request(base, '/admin/operations/reviews', token=account_id+'-admin')[1]['items'] == []
+                assert request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "paused"}, token=account_id + "-admin")[1]["mode"] == "disabled"
+                if account_id == "one" and with_index:
                     (data / "properties/property-one/docs/guide.md").write_text("Towels for property one are in the blue cupboard.")
                     (data / "properties/property-two/docs/guide.md").write_text("Towels for property two are in the green drawer.")
                     docker("exec", name, "python", "-m", "hosting.cli", "reindex", "property-one")
@@ -78,6 +95,16 @@ def main():
                 port = docker("port", name, "8790/tcp").split(":")[-1]
                 base = "http://127.0.0.1:" + port
                 wait_ready(base)
+                tls_port = docker("port", name, "9443/tcp").split(":")[-1]
+                tls_state = json.loads((data / 'state/tls/active.json').read_text())
+                HTTPS_BASES[base] = ('https://127.0.0.1:' + tls_port, data / 'state/tls' / tls_state['id'] / 'certificate.pem')
+                settings = request(base, "/admin/settings", token=account_id + "-admin")[1]
+                assert next(p for p in settings["properties"] if p["id"] == "property-one")["settings"]["mode"] == "disabled"
+                try:
+                    request(base, "/admin/settings/controls", {"property_id": "property-one", "response_mode": "draft"}, token=account_id + "-admin")
+                    raise AssertionError("Processing enabled without tested owner email")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 409
                 request(base, f"/webhook/hospitable/{account_id}?token={account_id}-hook", event)
                 counts = request(base, "/admin/inbox", token=account_id + "-admin")[1]["counts"]
                 assert sum(row["count"] for row in counts) == 1
@@ -93,3 +120,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

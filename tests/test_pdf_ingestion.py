@@ -41,6 +41,36 @@ class PDFTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             markdown_chunks(self.root)
 
+    def test_separately_positioned_words_form_readable_lines(self):
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=300, height=300)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})})
+        stream = DecodedStreamObject()
+        stream.set_data(b"BT /F1 12 Tf 1 0 0 1 20 250 Tm (Pull) Tj 1 0 0 1 48 250 Tm (the) Tj 1 0 0 1 70 250 Tm (cord) Tj 1 0 0 1 20 230 Tm (Press the button.) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(stream)
+        with self.pdf.open("wb") as file:
+            writer.write(file)
+        result = convert_all(self.root)[0]
+        text = (self.root / "document-review" / result["markdown"]).read_text()
+        self.assertIn("Pull the cord", " ".join(text.split()))
+        self.assertIn("Press the button.", text)
+        self.assertNotIn("Pull\n", text)
+
+    def test_new_converter_preserves_previous_review_and_approved_text(self):
+        with patch("hosting.pdf_ingestion.CONVERSION_VERSION", 1):
+            first = convert_all(self.root)[0]
+        previous = self.root / "document-review" / first["markdown"]
+        previous.write_text("Host reviewed version")
+        approved = approve(self.root, first["markdown"])
+        second = convert_all(self.root)[0]
+        self.assertNotEqual(first["markdown"], second["markdown"])
+        self.assertEqual(previous.read_text(), "Host reviewed version")
+        self.assertEqual(approved.read_text(), "Host reviewed version\n")
+        with self.assertRaises(ValueError):
+            approve(self.root, second["markdown"])
+        approve(self.root, second["markdown"], replace=True)
+
     def test_review_edits_are_preserved_and_approved_into_docs(self):
         result = convert_all(self.root)[0]
         review = self.root / "document-review" / result["markdown"]

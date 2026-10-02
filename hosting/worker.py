@@ -1,4 +1,4 @@
-"""Isolated property draft worker. No automatic guest sending."""
+"""Isolated property worker with explicit account/property sending controls."""
 import asyncio
 import json
 import os
@@ -23,8 +23,8 @@ Do not disclose passwords, door codes or private operational information.
 Do not diagnose faults or provide repair instructions. A fault, incident, booking
 change, missing fact or conflicting sources requires human review.
 Return ONLY a JSON object with action ('draft' or 'review'), answer (string),
-and reason (string). For review, answer must be empty. A draft is for operator
-approval and will not be sent to the guest automatically.
+and reason (string). For review, answer must be empty. Return a grounded draft suitable for the guest. The application, not the model,
+decides whether sending is enabled; human-review results are never sent.
 """
 
 # This is a conservative early gate, not a replacement for source grounding.
@@ -39,26 +39,50 @@ def retrieve_references(prop, message):
     from hosting.indexing import retrieve
     return retrieve(prop["runtime_dir"], message)
 
+def supply_outcome(message):
+    """Ignore only complete, unambiguous resolved-supply acknowledgements."""
+    normalized = message.replace("’", "'")
+    clauses = [part.strip(" ,–—-") for part in re.split(r"[.!\n]+", normalized) if part.strip(" ,–—-")]
+    resolved = re.compile(
+        r"(?:we|i) (?:found|have|have found|got|have got) enough "
+        r"(?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?))"
+        r"(?: and (?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?)))?"
+        r"(?: in the garage)?(?: to last us)?(?:,? so (?:no need to send more|we don't need any more))?"
+        r"|(?:we|i) found enough in the garage to last us,? so no need to send more",
+        re.I)
+    courtesy = re.compile(
+        r"hi martin|hello martin|thanks(?: so much)?|thank you(?: so much)?"
+        r"|appreciate your help|we appreciate your help|oi ying", re.I)
+    if clauses and any(resolved.fullmatch(c) for c in clauses) and all(
+            resolved.fullmatch(c) or courtesy.fullmatch(c) for c in clauses):
+        return {"action": "ignored", "answer": "", "reason": "Guest confirmed supplies are sufficient; no reply or owner alert"}
+    if re.search(r"\b(?:toilet (?:rolls?|paper)|(?:kitchen|paper) (?:rolls?|towels?))\b", normalized, re.I):
+        return {"action": "review", "answer": "", "reason": "Supply message needs the host to review and arrange any replenishment"}
+    return None
+
+
 def prepare_draft(prop, message):
     if REVIEW_INTENT.search(message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
+    supply = supply_outcome(message)
+    if supply is not None:
+        return supply
     references = retrieve_references(prop, message)
     if not references:
         return {"action": "review", "answer": "", "reason": "Property index is empty or not ready"}
-    from anthropic import Anthropic
-    result = Anthropic(api_key=secret(prop["model_key_env"]), timeout=60, max_retries=1).messages.create(
-        model=prop.get("model", "claude-sonnet-4-6"), max_tokens=600,
-        system=SYSTEM, messages=[{"role": "user", "content": json.dumps({
-            "property_name": prop["name"], "guest_message": message,
-            "references": references,
-        })}])
-    text = "".join(block.text for block in result.content if getattr(block, "type", None) == "text")
+    from hosting.ai_service import draft_text
+    text = draft_text(prop, SYSTEM, json.dumps({
+        "property_name": prop["name"], "guest_message": message,
+        "references": references,
+    }))
     answer = json.loads(text)
     if (not isinstance(answer, dict) or answer.get("action") not in {"draft", "review"}
             or not isinstance(answer.get("answer"), str) or not isinstance(answer.get("reason"), str)):
         raise ValueError("Invalid model response")
     if answer["action"] == "review":
         answer["answer"] = ""
+    # Store the exact retrieved references with the draft for later owner review.
+    answer['sources'] = [{'text': hit.get('text', ''), 'source': hit.get('source', {})} for hit in references]
     return answer
 
 
@@ -97,7 +121,12 @@ def create_app():
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     def process(payload):
-        if controls.effective(account_id, account, property_id)["mode"] != "shadow":
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+            from hosting.email_setup import ready as email_ready
+            effective = controls.effective(account_id, account, property_id)
+            if not email_ready(os.environ['TOOLKIT_DATA_DIR'], account_id) or not effective['email_enabled']:
+                raise HTTPException(503, 'Tested owner email is required for review alerts; events remain pending')
+        if controls.effective(account_id, account, property_id)["mode"] not in {"shadow", "automatic"}:
             raise HTTPException(503, "Processing paused or live sending unavailable")
         # Independent check also protects against accidental gateway misrouting.
         try:
@@ -114,6 +143,10 @@ def create_app():
             stored = db.execute("SELECT result FROM events WHERE event_key=?", (message_id,)).fetchone()
             if stored:
                 previous = json.loads(stored[0])
+                if previous.get('action') == 'send_pending':
+                    previous = {'action':'review','answer':'','reason':'Previous guest send outcome is uncertain; inspect conversation before replying', 'sources': previous.get('sources', [])}
+                    db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(previous),message_id))
+                    outbox.enqueue(message_id, account_id, property_id, {'account_id':account_id,'property_id':property_id,'property_name':prop['name'],'message_id':message_id,'reason':previous['reason']},db=db)
                 return {"ok": True, "action": "review" if previous.get("action") == "review" else "duplicate", "duplicate": True}
         role = str(data.get("sender_type") or data.get("sender_role") or "").lower()
         message = data.get("body")
@@ -123,7 +156,7 @@ def create_app():
             result = {"action": "review", "answer": "", "reason": "Attachment or empty message requires review"}
         else:
             try:
-                if controls.effective(account_id, account, property_id)["mode"] != "shadow":
+                if controls.effective(account_id, account, property_id)["mode"] not in {"shadow", "automatic"}:
                     raise HTTPException(503, "Processing paused")
                 result = prepare_draft(prop, message.strip())
             except HTTPException:
@@ -131,15 +164,33 @@ def create_app():
             except Exception:
                 # A failed model/index call remains reviewable; never disappear.
                 result = {"action": "review", "answer": "", "reason": "Draft generation unavailable"}
+        attempted = False
+        if result['action'] == 'draft' and controls.effective(account_id, account, property_id)['mode'] == 'automatic':
+            sources = result.get('sources', [])
+            attempted = True
+            with connect() as db:
+                db.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)', (message_id,json.dumps(payload),json.dumps({'action':'send_pending','answer':result['answer'],'reason':'Guest send in progress','sources':sources}),time.time()))
+            try:
+                from hosting.guest_sending import send, SendReview
+                result = send(os.environ['TOOLKIT_DATA_DIR'], account_id, property_id, account, payload, result['answer'], controls)
+            except SendReview as error:
+                result = {'action':'review','answer':'','reason':str(error)}
+            except Exception:
+                result = {'action':'review','answer':'','reason':'Automatic reply not confirmed; inspect conversation before replying'}
+            result['sources'] = sources
         with connect() as db:
-            db.execute("INSERT INTO events VALUES(?,?,?,?)", (message_id, json.dumps(payload), json.dumps(result), time.time()))
-            if result["action"] == "review":
+            if attempted:
+                db.execute('UPDATE events SET result=? WHERE event_key=?',(json.dumps(result),message_id))
+            else:
+                db.execute("INSERT INTO events VALUES(?,?,?,?)", (message_id, json.dumps(payload), json.dumps(result), time.time()))
+            if result["action"] in {"review", "draft"}:
                 outbox.enqueue(message_id, account_id, property_id, {
                     "account_id": account_id, "property_id": property_id,
                     "property_name": prop["name"], "message_id": message_id,
                     "reason": result["reason"], "guest_message": message[:1000] if isinstance(message, str) else "",
+                    "draft_answer": result.get('answer', ''), "review_page": "/review",
                 }, db=db)
-        return {"ok": True, "action": result["action"], "sent": False}
+        return {"ok": True, "action": result["action"], "sent": result["action"] == "sent"}
 
     @app.post("/webhook/hospitable")
     async def receive(request: Request):

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from hosting.config import secret
 
-PERMISSIONS = {"read", "preview", "settings"}
+PERMISSIONS = {"read", "preview", "settings", "schedule"}
 
 
 class Denied(PermissionError):

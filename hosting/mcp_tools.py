@@ -28,6 +28,9 @@ class HostedTools:
     def set_settings(self, token, account_id, property_id=None, enabled=None, shadow=None,
                      ha_enabled=None, email_enabled=None, heating_enabled=None, ha_alerts_enabled=None):
         actor = self.access.require(token, account_id, property_id, "settings")
+        import os
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container' and any(v is not None for v in (ha_enabled, heating_enabled, ha_alerts_enabled)):
+            raise ValueError('Home Assistant is not part of the community toolkit')
         from hosting.notifications import validate_channel
         account = self.accounts[account_id]
         for channel, value in (("ha", ha_alerts_enabled), ("email", email_enabled)):
@@ -109,3 +112,29 @@ class HostedTools:
                     rows = db.execute("SELECT channel,state,COUNT(*) FROM notification_outbox WHERE account=? GROUP BY channel,state", (account_id,))
                 result.extend({"channel": channel, "state": state, "count": count} for channel, state, count in rows)
         return result
+
+    def scheduled_queue(self, account_id):
+        import os
+        if os.environ.get('TOOLKIT_INSTANCE_MODE') != 'container':
+            raise ValueError('Scheduled messages require the community container')
+        from hosting.scheduled_messages import Queue
+        return Queue(os.environ['TOOLKIT_DATA_DIR'], account_id, self.accounts[account_id])
+
+    def list_reservations(self, token, account_id, property_id, page=1):
+        self.access.require(token, account_id, property_id, 'read')
+        from hosting.scheduled_messages import reservations
+        return reservations(self.accounts[account_id], property_id, page)
+
+    def scheduled_messages(self, token, account_id, property_id):
+        self.access.require(token, account_id, property_id, 'read')
+        return self.scheduled_queue(account_id).list(property_id)
+
+    def schedule_message(self, token, account_id, property_id, reservation_id, local_time, message, confirm_send=False, fold=None):
+        actor = self.access.require(token, account_id, property_id, 'schedule')
+        if confirm_send is not True:
+            raise ValueError('Confirm this future guest-facing send')
+        return self.scheduled_queue(account_id).create(property_id, reservation_id, local_time, message, actor, fold)
+
+    def cancel_scheduled_message(self, token, account_id, property_id, scheduled_message_id):
+        actor = self.access.require(token, account_id, property_id, 'schedule')
+        return self.scheduled_queue(account_id).cancel(property_id, scheduled_message_id, actor)

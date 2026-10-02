@@ -38,7 +38,8 @@ def read_credentials(path):
 def prepare(data_root=None, secrets_root=None):
     root = Path(data_root or os.environ.get("TOOLKIT_DATA_DIR", "/data")).resolve()
     config = json.loads((root / "config/account.json").read_text())
-    account = config["account"]
+    from hosting.property_setup import apply_selection
+    account = apply_selection(root, config["account"])
     if type(config.get("mcp", {}).get("enabled", False)) is not bool:
         raise ValueError("MCP enabled must be a boolean")
     from datetime import datetime
@@ -51,8 +52,8 @@ def prepare(data_root=None, secrets_root=None):
     account_id = account["id"]
     if not isinstance(account_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", account_id):
         raise ValueError("Invalid account ID")
-    if not isinstance(account.get("properties"), dict) or not account["properties"] or len(account["properties"]) > 64:
-        raise ValueError("Select 1-64 properties for this account")
+    if not isinstance(account.get("properties"), dict) or len(account["properties"]) > 64:
+        raise ValueError("Select up to 64 properties for this account")
     state = root / "state"
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     identity = state / "instance.json"
@@ -64,7 +65,9 @@ def prepare(data_root=None, secrets_root=None):
     if (root / "properties").is_symlink():
         raise ValueError("Property directory must not be a symlink")
     credentials = read_credentials(Path(secrets_root or os.environ.get("TOOLKIT_SECRETS_DIR", "/run/toolkit-secrets")) / "credentials.env")
-    references = {account.get("api_key_env", "HOSPITABLE_PAT"), account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET"), "TOOLKIT_ADMIN_SECRET"}
+    bootstrap_key = account.get("model_key_env", "ANTHROPIC_API_KEY")
+    from hosting.ai_service import PROVIDERS
+    references = {v["env"] for v in PROVIDERS.values()} | {bootstrap_key, account.get("api_key_env", "HOSPITABLE_PAT"), account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET"), "TOOLKIT_ADMIN_SECRET"}
     account = {**account, "api_key_env": account.get("api_key_env", "HOSPITABLE_PAT"), "webhook_secret_env": account.get("webhook_secret_env", "HOSPITABLE_WEBHOOK_SECRET")}
     ports = []
     for number, (pid, prop) in enumerate(account["properties"].items()):
@@ -94,7 +97,7 @@ def prepare(data_root=None, secrets_root=None):
     if mcp.get("enabled", False):
         clients = json.loads((root / "config/mcp_clients.json").read_text())["clients"]
         references.update(client["token_env"] for client in clients.values())
-    required = {account["api_key_env"], account["webhook_secret_env"], "TOOLKIT_ADMIN_SECRET"} | {prop["model_key_env"] for prop in account["properties"].values()}
+    required = {account["api_key_env"], account["webhook_secret_env"], "TOOLKIT_ADMIN_SECRET"}
     if not required <= set(credentials):
         raise ValueError("Required account credentials are missing")
     if set(credentials) - references:
@@ -104,7 +107,7 @@ def prepare(data_root=None, secrets_root=None):
     registry = state / "runtime-registry.json"
     registry.write_text(json.dumps({"accounts": {account_id: account}}))
     registry.chmod(0o600)
-    os.environ.update({"TOOLKIT_INSTANCE_MODE": "container", "TOOLKIT_DATA_DIR": str(root), "TOOLKIT_ACCOUNTS_FILE": str(registry), "TOOLKIT_CONTROLS_DB": str(state / "controls.sqlite3"), "TOOLKIT_INBOX_DB": str(state / "inbox.sqlite3"), "HF_HOME": str(root / "model-cache"), "SENTENCE_TRANSFORMERS_HOME": str(root / "model-cache"), "TOOLKIT_MCP_ENABLED": "true" if mcp.get("enabled", False) else "false"})
+    os.environ.update({"TOOLKIT_ACCOUNT_ID": account_id, "TOOLKIT_INSTANCE_MODE": "container", "TOOLKIT_DATA_DIR": str(root), "TOOLKIT_ACCOUNTS_FILE": str(registry), "TOOLKIT_CONTROLS_DB": str(state / "controls.sqlite3"), "TOOLKIT_INBOX_DB": str(state / "inbox.sqlite3"), "HF_HOME": str(root / "model-cache"), "SENTENCE_TRANSFORMERS_HOME": str(root / "model-cache"), "TOOLKIT_MCP_ENABLED": "true" if mcp.get("enabled", False) else "false"})
     if mcp.get("enabled", False):
         os.environ.update({"TOOLKIT_MCP_CLIENTS_FILE": str(root / "config/mcp_clients.json"), "TOOLKIT_MCP_RESOURCE_URL": mcp["resource_url"], "TOOLKIT_MCP_ISSUER_URL": mcp["issuer_url"]})
     from hosting.config import load_registry
@@ -123,6 +126,9 @@ def main():
         # Configuration errors must not expose secrets in container logs.
         print("Instance configuration failed; check config, mounts, permissions and credentials", file=sys.stderr)
         raise SystemExit(2)
+    from hosting.tls_settings import ensure
+    certificate, private_key = ensure(os.environ["TOOLKIT_DATA_DIR"])
+    os.environ["TOOLKIT_HTTPS_ADMIN"] = "true"
     children = []
     stopping = False
 
@@ -135,10 +141,16 @@ def main():
     try:
         for pid, _ in ports:
             children.append(subprocess.Popen([sys.executable, "-m", "hosting.manage", "worker", account_id, pid], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "hosting.scheduled_messages"], start_new_session=True))
         if account.get("indexing", {}).get("enabled", False):
             children.append(subprocess.Popen([sys.executable, "-m", "hosting.reindex_schedule"], start_new_session=True))
-        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8790", "--no-access-log"], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8790", "--no-access-log", "--no-proxy-headers"], start_new_session=True))
+        children.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "hosting.container_app:create_tls_app", "--factory", "--host", "0.0.0.0", "--port", "9443", "--no-access-log", "--no-proxy-headers", "--lifespan", "off", "--ssl-certfile", certificate, "--ssl-keyfile", private_key], start_new_session=True))
+        restart_request = Path(os.environ["TOOLKIT_DATA_DIR"]) / "state/restart-request.json"
         while not stopping:
+            if restart_request.exists() and time.time() - restart_request.stat().st_mtime > 2:
+                restart_request.unlink()
+                break  # Graceful exit; Compose unless-stopped starts the new selection.
             if any(child.poll() is not None for child in children):
                 raise RuntimeError("A required child exited")
             time.sleep(0.5)
@@ -163,3 +175,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

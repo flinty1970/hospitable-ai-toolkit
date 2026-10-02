@@ -43,7 +43,7 @@ def resolve_property(account, payload, get=requests.get):
     reservation = object_id(data.get("reservation_id") or data.get("reservation"))
     inquiry = object_id(data.get("conversation_id") or data.get("conversation"))
     if reservation:
-        path = "/reservations/" + quote(reservation, safe="")
+        path = "/reservations/" + quote(reservation, safe="") + "?include=properties"
     elif inquiry:
         path = "/inquiries/" + quote(inquiry, safe="")
     else:
@@ -84,6 +84,7 @@ class Inbox:
                 attempts INTEGER NOT NULL DEFAULT 0, next_attempt REAL DEFAULT 0,
                 received REAL NOT NULL, reason TEXT,
                 UNIQUE(account, event_key))""")
+            db.execute('CREATE TABLE IF NOT EXISTS webhook_receipts (account TEXT PRIMARY KEY, last_message REAL, last_guest REAL, last_probe REAL, received_count INTEGER DEFAULT 0)')
         os.chmod(self.path, 0o600)
 
     def connect(self):
@@ -116,6 +117,15 @@ class Inbox:
         with self.connect() as db:
             return [dict(row) for row in db.execute("SELECT account,state,COUNT(*) AS count FROM inbox GROUP BY account,state")]
 
+    def receipt(self, account, guest=False, probe=False):
+        with self.connect() as db:
+            now = time.time()
+            db.execute('INSERT OR IGNORE INTO webhook_receipts(account) VALUES(?)', (account,))
+            if probe:
+                db.execute('UPDATE webhook_receipts SET last_probe=? WHERE account=?', (now, account))
+            else:
+                db.execute('UPDATE webhook_receipts SET last_message=?,last_guest=CASE WHEN ? THEN ? ELSE last_guest END,received_count=received_count+1 WHERE account=?', (now, guest, now, account))
+
 
 def deliver(inbox, account, row, expected_property=None, controls=None):
     property_id = None
@@ -124,7 +134,7 @@ def deliver(inbox, account, row, expected_property=None, controls=None):
         property_id = resolve_property(account, payload)
         if expected_property and property_id != expected_property:
             raise Unresolved("Property changed during dispatch; operator review required")
-        if controls and controls.effective(row["account"], account, property_id)["mode"] != "shadow":
+        if controls and controls.effective(row["account"], account, property_id)["mode"] not in {"shadow", "automatic"}:
             inbox.update(row["id"], "pending", property_id, "Processing paused by account/property controls", retry=True)
             return
         prop = account["properties"][property_id]
@@ -233,9 +243,13 @@ def create_app(registry_path=None, inbox_path=None):
             raise HTTPException(400, "Expected event object with data")
         event = payload.get("action") or payload.get("event") or payload.get("type") or payload.get("event_type")
         if event != "message.created":
+            if event == 'toolkit.connection_test':
+                inbox.receipt(account_id, probe=True)
             return {"ok": True, "action": "ignored", "reason": "Only message.created is supported"}
         try:
             inbox.add(account_id, payload)
+            data = payload['data']
+            inbox.receipt(account_id, guest=str(data.get('sender_type') or data.get('sender_role') or '').lower() == 'guest')
         except sqlite3.Error:
             raise HTTPException(503, "Durable inbox unavailable")
         return {"ok": True, "action": "queued"}

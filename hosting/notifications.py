@@ -17,7 +17,14 @@ from hosting.config import secret
 def channel_config(account, property_id, channel):
     parent = account.get("notifications", {}).get(channel, {})
     child = account.get("properties", {}).get(property_id, {}).get("notifications", {}).get(channel, {}) if property_id else {}
-    return {**parent, **child}
+    result = {**parent, **child}
+    if channel == 'email' and os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
+        from hosting.email_setup import read_settings
+        saved = read_settings(os.environ['TOOLKIT_DATA_DIR'], account['id'])
+        if saved:
+            from hosting.email_setup import recipients
+            result.update(sender=saved['sender'], recipients=recipients(saved['recipient']), browser_smtp=saved)
+    return result
 
 
 def validate_channel(account, property_id, channel):
@@ -27,6 +34,10 @@ def validate_channel(account, property_id, channel):
         if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.fragment:
             raise ValueError("HA webhook must be an operator-configured HTTP(S) URL")
     elif channel == "email":
+        if 'browser_smtp' in config:
+            from hosting.email_setup import validate
+            validate(config['browser_smtp'])
+            return config
         path = Path(config["msmtp_config_file"])
         if not path.is_absolute():
             raise ValueError("msmtp_config_file must be absolute")
@@ -59,7 +70,8 @@ class Outbox:
         return db
 
     def enqueue(self, event_key, account_id, property_id, payload, db=None):
-        values = [(event_key, channel, account_id, property_id or "", json.dumps(payload)) for channel in ("ha", "email")]
+        channels = ("email",) if os.environ.get("TOOLKIT_INSTANCE_MODE") == "container" else ("ha", "email")
+        values = [(event_key, channel, account_id, property_id or "", json.dumps(payload)) for channel in channels]
         sql = "INSERT OR IGNORE INTO notification_outbox(event_key,channel,account,property,payload) VALUES(?,?,?,?,?)"
         if db is not None:
             db.executemany(sql, values)
@@ -114,9 +126,13 @@ class Outbox:
                     identity = hashlib.sha256((row["account"] + ":" + row["event_key"]).encode()).hexdigest()
                     message["Message-ID"] = f"<{identity}@hospitable-ai-toolkit.local>"
                     message.set_content(json.dumps(payload, ensure_ascii=False, indent=2))
-                    subprocess.run(["/usr/bin/msmtp", "--file=" + config["msmtp_config_file"],
-                                    "--account=" + config["msmtp_account"], "-f", config["sender"], "-t"],
-                                   input=message.as_bytes(), capture_output=True, timeout=20, check=True)
+                    if 'browser_smtp' in config:
+                        from hosting.email_setup import send
+                        send(config['browser_smtp'], message)
+                    else:
+                        subprocess.run(["/usr/bin/msmtp", "--file=" + config["msmtp_config_file"],
+                                        "--account=" + config["msmtp_account"], "-f", config["sender"], "-t"],
+                                       input=message.as_bytes(), capture_output=True, timeout=20, check=True)
                 with self.connect() as db:
                     db.execute("UPDATE notification_outbox SET state='sent',reason=NULL WHERE event_key=? AND channel=?", (row["event_key"], channel))
             except Exception:
