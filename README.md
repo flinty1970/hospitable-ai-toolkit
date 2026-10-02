@@ -26,6 +26,24 @@ AI API usage and hosting may incur charges; chat subscriptions do not include AP
 **Guest auto-send defaults off.** Community containers can send supported drafts only after both account and property response modes are explicitly set to Automatic replies, with tested owner email enabled. Ordinary draft mode does not send. Legacy deployments retain `live_unavailable` behavior.
 Heating has an opt-in flag but no controller. No direct PriceLabs integration exists.
 
+## Multilingual review policy and upgrade checks
+
+Guest requests requiring host decisions must remain under owner review regardless of language: early check-in, late checkout, booking or guest-count changes, money/refunds, replenishment, service arrangements, faults, damage, safety, complaints and access problems. Routine factual questions can receive grounded drafts. Uncertain meaning or failed model/index processing requires review. Keyword guards are additional checks, not evidence that an unmatched request is safe.
+
+The October 2026 operator rollout includes positive numeric message-ID normalization and explicit multilingual instructions in the existing worker model prompt. These source changes must be committed, tested and rebuilt into the deployed image; this documentation update alone does not install them. Verify your checked-out worker accepts positive integer IDs and contains the multilingual review instructions before deploying.
+
+Owner email notifications are queued durably for worker review/draft outcomes. Community containers do not provide Home Assistant alerts. Gateway receipt does not prove worker processing or email delivery: inspect `data/state/inbox.sqlite3` for state/retry reasons, and each property's `state/events.sqlite3` for the recorded result and alert outbox. Pending events retain their retry schedule across rebuilds; do not resubmit or erase deduplication records to force processing.
+
+After Python source changes, rebuild using your deployment's Compose project and instance environment file, for example:
+
+```bash
+docker compose --project-name account-one \
+  --env-file /srv/hospitable-ai/account-one/instance.env \
+  up -d --build toolkit
+```
+
+README-only changes require no rebuild. Check the deployed source, container health, retained event outcome and owner email delivery. Passing the existing tests does not establish correct intent classification across every language; test translated requests, mixed requests and acknowledgements before enabling automatic replies.
+
 ## Storage
 
 Each account's host folder contains:
