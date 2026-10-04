@@ -72,7 +72,50 @@ class HostingTests(unittest.TestCase):
         self.payload["data"]["conversation_id"] = "inquiry/id"
         get = Mock(return_value=self.response())
         resolve_property(self.accounts["a"], self.payload, get)
-        self.assertTrue(get.call_args.args[0].endswith("/inquiries/inquiry%2Fid"))
+        self.assertTrue(get.call_args.args[0].endswith("/inquiries/inquiry%2Fid?include=properties"))
+
+    def test_inquiry_expanded_property_object(self):
+        self.payload["data"].pop("reservation_id")
+        self.payload["data"]["conversation_id"] = "inquiry-id"
+        response = self.response()
+        response.json.return_value = {"data": {"properties": {"id": "property-a"}}}
+        self.assertEqual(resolve_property(self.accounts["a"], self.payload, Mock(return_value=response)), "property-a")
+
+    def test_third_party_grocery_visit_requires_review_without_model(self):
+        message = "My son is staying at your property. Could I leave some milk, eggs and bread before he arrives?"
+        with patch("hosting.worker.retrieve_references") as retrieve:
+            result = worker.prepare_draft({}, message)
+        self.assertEqual(result["action"], "review")
+        self.assertEqual(result["answer"], "")
+        retrieve.assert_not_called()
+
+    def test_conflicting_api_properties_require_review(self):
+        response = self.response()
+        response.json.return_value = {"data": {"property_id": "property-a", "properties": {"id": "property-b"}}}
+        with self.assertRaises(Unresolved):
+            resolve_property(self.accounts["a"], self.payload, Mock(return_value=response))
+
+    def test_outgoing_inquiry_ignored_before_resolution(self):
+        self.payload["data"].pop("reservation_id")
+        self.payload["data"]["conversation_id"] = "inquiry-id"
+        client = TestClient(create_app(self.registry, self.inbox.path))
+        for role, source in (("host", "platform"), ("host", "automated"), ("host", "AI"), ("guest", "automated")):
+            with self.subTest(role=role, source=source), patch("hosting.gateway.resolve_property") as resolve:
+                self.payload["data"].update(sender_type=role, source=source)
+                result = client.post("/webhook/hospitable/a?token=account-a-hook", json=self.payload)
+                self.assertEqual(result.json()["action"], "ignored")
+                resolve.assert_not_called()
+        self.assertEqual(self.inbox.counts(), [])
+
+    def test_queued_outgoing_event_ignored_without_alert_or_api(self):
+        self.payload["data"]["sender_type"] = "host"
+        self.inbox.add("a", self.payload)
+        row = self.inbox.pending("a")[0]
+        with patch("hosting.gateway.resolve_property") as resolve, patch("hosting.gateway.review_event") as review:
+            deliver(self.inbox, self.accounts["a"], row)
+            resolve.assert_not_called()
+            review.assert_not_called()
+        self.assertEqual(self.inbox.counts()[0]["state"], "ignored")
 
     def test_missing_api_property_requires_review(self):
         response = self.response()

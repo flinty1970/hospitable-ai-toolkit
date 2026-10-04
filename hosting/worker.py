@@ -9,7 +9,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from hosting.gateway import MAX_BODY, Unresolved, resolve_property
+from hosting.gateway import MAX_BODY, Unresolved, resolve_property, is_outgoing
 from hosting.config import load_registry, secret
 from hosting.controls import Controls, control_path
 from hosting.notifications import Outbox
@@ -74,6 +74,16 @@ def supply_outcome(message):
 
 
 def prepare_draft(prop, message):
+    normalized = " ".join(message.casefold().split())
+    third_party = any(marker in normalized for marker in (
+        "my son", "my daughter", "my father", "my mother", "my dad", "my mum",
+        "my husband", "my wife", "father-in-law", "mother-in-law", "someone else",
+    ))
+    visit = any(marker in normalized for marker in (
+        "access", "let me in", "let him in", "let her in", "drop off", "drop some", "leave some", "groceries",
+    ))
+    if third_party and visit:
+        return {"action": "review", "answer": "", "reason": "Third-party access or drop-off requires booked-guest consent and host approval"}
     german_time_change = (
         re.search(r"\b(?:früh\w*|frueh\w*|eher|spät\w*|spaet\w*)\b", message.casefold())
         and re.search(r"\b(?:eincheck\w*|auscheck\w*|check[ -]?in|check[ -]?out|anreis\w*|abreis\w*)\b", message.casefold())
@@ -137,6 +147,8 @@ def create_app():
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     def process(payload):
+        if is_outgoing(payload):
+            return {"ok": True, "action": "ignored", "sent": False}
         if os.environ.get('TOOLKIT_INSTANCE_MODE') == 'container':
             from hosting.email_setup import ready as email_ready
             effective = controls.effective(account_id, account, property_id)
