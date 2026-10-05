@@ -52,6 +52,48 @@ class HostingTests(unittest.TestCase):
         self.assertEqual(resolve_property(self.accounts["b"], self.payload, get), "property-b")
         self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer account-b-key")
 
+    def test_booking_context_comes_from_verified_api_only(self):
+        self.payload["data"]["check_in"] = "2026-11-07T09:00:00+00:00"
+        response = self.response()
+        response.json.return_value["data"]["check_in"] = "2026-11-08T16:00:00+00:00"
+        context = {}
+        resolve_property(self.accounts["a"], self.payload, Mock(return_value=response), context=context)
+        self.assertEqual(context["check_in"], "2026-11-08T16:00:00+00:00")
+
+    def test_informational_evening_arrival_needs_no_model_or_sources(self):
+        context = {"check_in": "2026-11-08T16:00:00+00:00"}
+        message = "Brilliant thanks Sam. We will be arriving late evening about 8pm on the 8th."
+        with patch("hosting.worker.retrieve_references") as retrieve, patch("hosting.ai_service.draft_text") as model:
+            result = worker.prepare_draft({}, message, context)
+        self.assertEqual(result["action"], "ignored")
+        self.assertEqual(result["answer"], "")
+        retrieve.assert_not_called()
+        model.assert_not_called()
+
+    def test_arrival_conflicts_and_missing_context_still_need_review(self):
+        context = {"check_in": "2026-11-08T16:00:00+00:00"}
+        for message, booking in (
+            ("We will arrive at 8am on the 8th.", context),
+            ("We will arrive at 8pm on the 7th.", context),
+            ("We will arrive at 8pm on the 8th December.", context),
+            ("We will arrive at 8pm on the 8th November 2027.", context),
+            ("We will arrive at 8pm on the 8th.", {}),
+            ("We will arrive at 8 on the 8th.", context),
+        ):
+            with self.subTest(message=message, booking=booking), patch("hosting.worker.retrieve_references") as retrieve:
+                self.assertEqual(worker.prepare_draft({}, message, booking)["action"], "review")
+                retrieve.assert_not_called()
+
+    def test_mixed_arrival_updates_never_disappear(self):
+        context = {"check_in": "2026-11-08T16:00:00+00:00"}
+        for suffix in ("Can we check in early?", "The heating is broken.", "Please arrange a taxi.",
+                       "Where is the parking?", "My father needs access to drop off groceries."):
+            message = "Brilliant thanks Sam. We will arrive at 8pm on the 8th. " + suffix
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(worker.arrival_update_outcome(message, context))
+                with patch("hosting.worker.retrieve_references", return_value=[]):
+                    self.assertEqual(worker.prepare_draft({}, message, context)["action"], "review")
+
     def test_unmanaged_property_never_falls_back(self):
         with self.assertRaises(Unresolved):
             resolve_property(self.accounts["b"], self.payload, Mock(return_value=self.response()))

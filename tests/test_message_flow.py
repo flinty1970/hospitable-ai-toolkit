@@ -37,14 +37,14 @@ class MessageFlowTests(unittest.TestCase):
 
     def get(self,url,**kwargs):
         response=Mock(status_code=200)
-        response.json.return_value={'data':[self.event['data']]} if url.endswith('/messages') else {'data':{'property_id':'property-a'}}
+        response.json.return_value={'data':[self.event['data']]} if url.endswith('/messages') else {'data':{'property_id':'property-a', 'check_in':'2026-11-08T16:00:00+00:00'}}
         return response
 
     def dispatch(self):
         response=self.api.post('/webhook/hospitable/a?token=account-a-hook',json=self.event)
         self.assertEqual(response.status_code,200)
         resolver=gateway.resolve_property
-        resolve=lambda account,payload,**kw: resolver(account,payload,get=self.get)
+        resolve=lambda account,payload,**kw: resolver(account,payload,get=self.get,**kw)
         with patch('hosting.gateway.resolve_property',side_effect=resolve),patch('hosting.worker.resolve_property',side_effect=resolve), \
              patch('hosting.worker.retrieve_references',return_value=self.sources),patch('hosting.ai_service.draft_text',return_value=json.dumps({'action':'draft','answer':'In the blue cupboard.','reason':'Guide'})), \
              patch('requests.get',side_effect=self.get),patch('requests.post',side_effect=self.transport) as post:
@@ -84,6 +84,19 @@ class MessageFlowTests(unittest.TestCase):
         for automatic in (False, True):
             with self.subTest(automatic=automatic):
                 self.event['data']['id'] = 'resolved-supply-' + str(automatic)
+                if automatic:
+                    self.controls.set('test', 'a', shadow=False)
+                    self.controls.set('test', 'a', 'property-a', shadow=False)
+                with patch('hosting.notifications.Outbox.enqueue') as enqueue:
+                    self.assertEqual(self.dispatch(), [])
+                    enqueue.assert_not_called()
+                self.assertEqual(Operations(self.root, 'a', self.account).items(), [])
+
+    def test_evening_arrival_no_owner_alert_or_guest_send(self):
+        self.event['data']['body'] = 'Brilliant thanks Sam. We will be arriving late evening about 8pm on the 8th.'
+        for automatic in (False, True):
+            with self.subTest(automatic=automatic):
+                self.event['data']['id'] = 'arrival-update-' + str(automatic)
                 if automatic:
                     self.controls.set('test', 'a', shadow=False)
                     self.controls.set('test', 'a', 'property-a', shadow=False)
