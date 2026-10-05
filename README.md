@@ -11,6 +11,23 @@ It provides self-hosted property knowledge, guest drafts and owner review. Start
 Draft only and complete the live validation checklist before enabling automatic replies.
 AI API usage and hosting may incur charges; chat subscriptions do not include API usage.
 
+## Refreshing approved property knowledge
+
+Property-specific facts belong in that property's approved `docs/*.md`, rather than in generic routing code. Check conflicting instructions before indexing. For example, a manual smart lock may require closing the door, lifting the handle and pressing a locking button; do not infer auto-lock from lifting the handle. Confirm the actual property's procedure.
+
+Run from the repository on the Docker host, replacing the project, instance directory and property ID below:
+
+```bash
+sudo docker compose --project-name YOUR_PROJECT \
+  --env-file /srv/hospitable-ai/YOUR_INSTANCE/instance.env \
+  exec -T toolkit python -c \
+  'from hosting.indexing import rebuild; print(rebuild("/data/properties/YOUR_PROPERTY_ID"))'
+```
+
+The non-root container user needs read access to the approved Markdown and write access to the property's index directory. A host-side `sudo cp` can create an unreadable file. Prefer ownership matching the configured `APP_UID/APP_GID` and private mode `640`; confirm directory traversal permissions too. For a guest-safe document that may be locally readable, `chmod 644` on that single file is another option. Do not recursively widen permissions or apply this to credentials or private guest data. Back up the previous document before replacement, keeping backups outside the indexed `*.md` set.
+
+A successful rebuild prints its generation, chunk count and embedding model, then activates the new index atomically. A failed rebuild leaves the previous index active. Another RAG service's rebuild does not update this instance. README-only changes require no container rebuild. After indexing, inspect retrieval or a draft-only preview to confirm the corrected instructions are used.
+
 ## What works
 
 - Durable authenticated message webhook inbox, receipt diagnostics and API-verified property routing.
