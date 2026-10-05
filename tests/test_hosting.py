@@ -47,6 +47,27 @@ class HostingTests(unittest.TestCase):
         response.json.return_value = {"data": {"property": {"id": property_id}}}
         return response
 
+
+    def test_pure_german_thanks_is_ignored_without_retrieval(self):
+        for message in ("Vielen Dank Martin 👍🏻👍🏻", "Danke!", "Thanks Martin"):
+            with self.subTest(message=message), patch("hosting.worker.retrieve_references") as retrieve:
+                result = worker.prepare_draft({}, message)
+                self.assertEqual(result["action"], "ignored")
+                self.assertEqual(result["answer"], "")
+                retrieve.assert_not_called()
+
+    def test_mixed_acknowledgements_continue_processing(self):
+        for message in (
+            "Vielen Dank Martin. Können wir früher einchecken?",
+            "Danke, aber die Heizung funktioniert nicht.",
+            "Thanks Martin, the door is broken.",
+            "Thank you. Where are the towels?",
+            "Thanks for nothing",
+            "Danke nein",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNone(worker.acknowledgement_outcome(message))
+
     def test_account_key_is_used_for_resolution(self):
         get = Mock(return_value=self.response("property-b"))
         self.assertEqual(resolve_property(self.accounts["b"], self.payload, get), "property-b")
