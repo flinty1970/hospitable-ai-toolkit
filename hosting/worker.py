@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import time
+from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -34,6 +35,10 @@ remaining question, request or problem, return action 'ignored' with an empty
 answer. Apply this in every language. A mixed acknowledgement containing a new
 request or problem must still be processed. Never infer that everything is
 fine, an issue is resolved, or a booking change is approved merely from thanks.
+An informational arrival time within the verified booking's check-in window,
+with no question, request or problem, is also 'ignored'. Mentioning 'late evening'
+does not itself request a check-in change. Compare any stated date/time with
+reservation_context; conflicting or unverified arrangements require review.
 Return ONLY a JSON object with action ('draft', 'review' or 'ignored'), answer (string),
 and reason (string). For review, answer must be empty. Return a grounded draft suitable for the guest. The application, not the model,
 decides whether sending is enabled; human-review results are never sent.
@@ -73,7 +78,45 @@ def supply_outcome(message):
     return None
 
 
-def prepare_draft(prop, message):
+def arrival_update_outcome(message, reservation_context):
+    """Suppress only complete arrival statements matching verified check-in."""
+    normalized = " ".join(message.casefold().replace("’", "'").split())
+    clauses = [c.strip(" ,") for c in re.split(r"[.!\n]+", normalized) if c.strip(" ,")]
+    courtesy = re.compile(
+        r"(?:brilliant|great|perfect|lovely|ok|okay)(?:[, ]+(?:thanks|thank you)(?: [a-z]+)?)?"
+        r"|thanks|thank you|thanks so much|thank you so much")
+    arrival = re.compile(
+        r"(?:we|i)(?: will be| will|'ll be|'ll| are| am|'re|'m) (?:arriving|arrive)"
+        r"(?: (?:late evening|in the evening|this evening))?"
+        r" (?:at|about|around) (\d{1,2})(?::(\d{2}))?\s*(am|pm)?"
+        r"(?: on (?:the )?(\d{1,2})(?:st|nd|rd|th)?"
+        r"(?: (january|february|march|april|may|june|july|august|september|october|november|december))?"
+        r"(?: (20\d{2}))?)?")
+    updates = [arrival.fullmatch(c) for c in clauses if not courtesy.fullmatch(c)]
+    if not updates or not all(updates):
+        return None
+    try:
+        check_in = datetime.fromisoformat(reservation_context["check_in"].replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError):
+        return {"action": "review", "answer": "", "reason": "Arrival update needs verified booking dates and check-in time"}
+    months = "january february march april may june july august september october november december".split()
+    for match in updates:
+        hour, minute = int(match[1]), int(match[2] or 0)
+        if minute > 59 or (match[3] and not 1 <= hour <= 12) or (not match[3] and hour > 23):
+            return {"action": "review", "answer": "", "reason": "Arrival time is invalid or ambiguous"}
+        if match[3]:
+            hour = hour % 12 + (12 if match[3] == "pm" else 0)
+        elif hour < 13:
+            return {"action": "review", "answer": "", "reason": "Arrival time needs clarification of am or pm"}
+        date_matches = ((not match[4] or int(match[4]) == check_in.day)
+                        and (not match[5] or months.index(match[5]) + 1 == check_in.month)
+                        and (not match[6] or int(match[6]) == check_in.year))
+        if not date_matches or (hour, minute) < (check_in.hour, check_in.minute):
+            return {"action": "review", "answer": "", "reason": "Arrival date or time conflicts with the verified check-in arrangements"}
+    return {"action": "ignored", "answer": "", "reason": "Informational arrival update matches verified check-in; no reply or owner alert"}
+
+
+def prepare_draft(prop, message, reservation_context=None):
     normalized = " ".join(message.casefold().split())
     third_party = any(marker in normalized for marker in (
         "my son", "my daughter", "my father", "my mother", "my dad", "my mum",
@@ -93,12 +136,16 @@ def prepare_draft(prop, message):
     supply = supply_outcome(message)
     if supply is not None:
         return supply
+    arrival = arrival_update_outcome(message, reservation_context or {})
+    if arrival is not None:
+        return arrival
     references = retrieve_references(prop, message)
     if not references:
         return {"action": "review", "answer": "", "reason": "Property index is empty or not ready"}
     from hosting.ai_service import draft_text
     text = draft_text(prop, SYSTEM, json.dumps({
         "property_name": prop["name"], "guest_message": message,
+        "reservation_context": reservation_context or {},
         "references": references,
     }))
     answer = json.loads(text)
@@ -158,7 +205,8 @@ def create_app():
             raise HTTPException(503, "Processing paused or live sending unavailable")
         # Independent check also protects against accidental gateway misrouting.
         try:
-            resolved = resolve_property(account, payload)
+            reservation_context = {}
+            resolved = resolve_property(account, payload, context=reservation_context)
             if resolved != property_id:
                 raise Unresolved("Event belongs to a different property")
         except Unresolved:
@@ -189,7 +237,7 @@ def create_app():
             try:
                 if controls.effective(account_id, account, property_id)["mode"] not in {"shadow", "automatic"}:
                     raise HTTPException(503, "Processing paused")
-                result = prepare_draft(prop, message.strip())
+                result = prepare_draft(prop, message.strip(), reservation_context=reservation_context)
             except HTTPException:
                 raise
             except Exception:

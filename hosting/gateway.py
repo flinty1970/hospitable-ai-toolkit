@@ -57,7 +57,7 @@ def is_outgoing(payload):
     return False
 
 
-def resolve_property(account, payload, get=requests.get):
+def resolve_property(account, payload, get=requests.get, context=None):
     """Use this account's API as authority; never trust a payload property alone."""
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -99,6 +99,9 @@ def resolve_property(account, payload, get=requests.get):
     claimed = object_id(data.get("property_id") or data.get("property"))
     if claimed and claimed != property_id:
         raise Unresolved("Payload property conflicts with account API")
+    if context is not None and reservation:
+        # Only the verified account API record supplies booking dates/times.
+        context.update({key: record.get(key) for key in ("check_in", "arrival_date")})
     return property_id
 
 
