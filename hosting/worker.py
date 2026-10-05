@@ -56,6 +56,21 @@ def retrieve_references(prop, message):
     from hosting.indexing import retrieve
     return retrieve(prop["runtime_dir"], message)
 
+def acknowledgement_outcome(message):
+    """Ignore only complete short courtesies; mixed messages continue routing."""
+    text = re.sub(r"[👍🏻🏼🏽🏾🏿🙏😊🙂☺️❤♥👋]", "", message).strip()
+    text = re.sub(r"[.! ,]+$", "", text)
+    courtesies = {"thanks", "thank you", "thank you so much", "thanks so much",
+                 "vielen dank", "danke", "danke schön", "dankeschön",
+                 "merci", "merci beaucoup", "gracias"}
+    if text.casefold() not in courtesies:
+        # A single capitalized addressee is allowed; arbitrary trailing text is not.
+        match = re.fullmatch(r"(.+?)[, ]+([A-ZÀ-Ý][a-zà-ÿ]+)", text)
+        if not match or match[1].casefold() not in courtesies:
+            return None
+    return {"action": "ignored", "answer": "", "reason": "Pure acknowledgement; no reply or owner alert"}
+
+
 def supply_outcome(message):
     """Ignore only complete, unambiguous resolved-supply acknowledgements."""
     normalized = message.replace("’", "'")
@@ -133,6 +148,9 @@ def prepare_draft(prop, message, reservation_context=None):
     )
     if german_time_change or REVIEW_INTENT.search(message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
+    acknowledgement = acknowledgement_outcome(message)
+    if acknowledgement is not None:
+        return acknowledgement
     supply = supply_outcome(message)
     if supply is not None:
         return supply
