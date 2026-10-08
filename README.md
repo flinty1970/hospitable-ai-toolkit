@@ -1,4 +1,6 @@
-# Hospitable AI Toolkit
+# Winnie Community
+
+Winnie Community is the community edition of Winnie (formerly Windsor RAG). The existing `hospitable-ai-toolkit` repository, installation commands and configuration identifiers remain compatible.
 
 **Platform testing:** This community toolkit has been tested on Linux only. Windows / Docker Desktop installation, bind mounts, persistence and service setup have not been tested. Windows commands below are guidance, not a verified installation procedure.
 
