@@ -35,7 +35,7 @@ def create_server():
                 return None
             return AccessToken(token=token, client_id=client_id, scopes=["toolkit:access"], resource=resource)
 
-    mcp = FastMCP("Hospitable AI Toolkit", token_verifier=Verifier(),
+    mcp = FastMCP("Winnie Community", token_verifier=Verifier(),
                   stateless_http=True, json_response=True, streamable_http_path=parsed.path,
                   transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=True,
                       allowed_hosts=[parsed.netloc, "127.0.0.1:*", "localhost:*"],
