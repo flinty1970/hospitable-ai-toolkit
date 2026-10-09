@@ -19,14 +19,7 @@ Confirmed reservation address requests use the account's Hospitable property add
 
 Informational station taxi replies can use an owner-approved `docs/station_taxi.md` in the selected property's runtime directory. Use `## Station name` headings and a `## General` section for fare caveats and local taxi alternatives. Only mentioned station sections are returned. Prices in these narrow informational requests do not trigger the general price-review rule; ride bookings, payments, booking changes and incidents still require review. Do not put another property's estimates in a shared configuration.
 
-The Windsor-specific owner-approved example is `examples/property-overrides/windsor_station_taxi.md`. To install it for the existing Windsor instance after updating this repository:
-
-```bash
-sudo install -m 644 examples/property-overrides/windsor_station_taxi.md /srv/hospitable-ai/account-one/data/properties/9ae89a6b-ed00-49f8-b1f9-7875e570c3aa/docs/station_taxi.md
-sudo docker compose --project-name account-one --env-file /srv/hospitable-ai/account-one/instance.env up -d --build toolkit
-```
-
-Back up an existing station_taxi.md outside the indexed docs directory before replacement. This narrowly selected file is read directly; no index rebuild is required. These commands do not replay old guest messages.
+Use `examples/property-knowledge/station_taxi.md` as a format template, fill it with the selected property's owner-approved stations, estimates and taxi contacts, and save it as that property's `docs/station_taxi.md`. Back up any existing guidance outside the indexed docs directory before replacement. This narrowly selected file is read directly; no index rebuild is required. Rebuild the toolkit image after updating Python source. These changes do not replay old guest messages.
 
 ## Refreshing approved property knowledge
 
