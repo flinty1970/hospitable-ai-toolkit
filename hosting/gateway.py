@@ -65,7 +65,7 @@ def resolve_property(account, payload, get=requests.get, context=None):
     reservation = object_id(data.get("reservation_id") or data.get("reservation"))
     inquiry = object_id(data.get("conversation_id") or data.get("conversation"))
     if reservation:
-        path = "/reservations/" + quote(reservation, safe="") + "?include=properties"
+        path = "/reservations/" + quote(reservation, safe="") + "?include=properties,guest"
     elif inquiry:
         path = "/inquiries/" + quote(inquiry, safe="") + "?include=properties"
     else:
@@ -102,6 +102,31 @@ def resolve_property(account, payload, get=requests.get, context=None):
     if context is not None and reservation:
         # Only the verified account API record supplies booking dates/times.
         context.update({key: record.get(key) for key in ("check_in", "arrival_date")})
+        from hosting.factual_requests import address_request
+        if address_request(str(data.get("body") or "")):
+            status = ((record.get("reservation_status") or {}).get("current") or {}).get("category")
+            if record.get("id") != reservation or status != "accepted":
+                return property_id
+            conversation = object_id(data.get("conversation_id") or data.get("conversation"))
+            if conversation and record.get("conversation_id") != conversation:
+                raise Unresolved("Reservation conversation mismatch")
+            response = get(API_BASE + "/properties/" + quote(property_id, safe=""), headers={
+                "Authorization": "Bearer " + secret(account["api_key_env"]),
+                "Accept": "application/json",
+            }, timeout=20, allow_redirects=False)
+            response.raise_for_status()
+            prop_record = response.json().get("data") or {}
+            if prop_record.get("id") != property_id:
+                raise Unresolved("Property address identity mismatch")
+            address = prop_record.get("address") or {}
+            street, city, postcode = (str(address.get(k) or "").strip() for k in ("street", "city", "postcode"))
+            if street and city and postcode:
+                number = str(address.get("number") or "").strip()
+                if number and not street.startswith(number + " "):
+                    street = number + " " + street
+                context["verified_property_address"] = ", ".join((street, city, postcode))
+                context["guest_first_name"] = str((record.get("guest") or {}).get("first_name") or "").strip()
+
     return property_id
 
 
