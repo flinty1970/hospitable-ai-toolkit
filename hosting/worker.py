@@ -146,7 +146,14 @@ def prepare_draft(prop, message, reservation_context=None):
         re.search(r"\b(?:früh\w*|frueh\w*|eher|spät\w*|spaet\w*)\b", message.casefold())
         and re.search(r"\b(?:eincheck\w*|auscheck\w*|check[ -]?in|check[ -]?out|anreis\w*|abreis\w*)\b", message.casefold())
     )
-    if german_time_change or REVIEW_INTENT.search(message):
+    from hosting.factual_requests import address_outcome, station_taxi_outcome
+    taxi = station_taxi_outcome(prop, message)
+    guarded_message = re.sub(r"\b(?:price|cost|charge|fee|rate)\b", "fare", message, flags=re.I) if taxi else message
+    transport_arrangement = bool(
+        re.search(r"\b(?:taxi|taxis|uber|cab|cabs)\b", message, re.I)
+        and re.search(r"\b(?:arrange|order|pay|payment|reimburse\w*)\b|\b(?:book|reserve)\s+(?:me|us|a|the|my|our)\b", message, re.I)
+    )
+    if german_time_change or transport_arrangement or REVIEW_INTENT.search(guarded_message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
     acknowledgement = acknowledgement_outcome(message)
     if acknowledgement is not None:
@@ -157,6 +164,11 @@ def prepare_draft(prop, message, reservation_context=None):
     arrival = arrival_update_outcome(message, reservation_context or {})
     if arrival is not None:
         return arrival
+    address = address_outcome(message, reservation_context or {})
+    if address is not None:
+        return address
+    if taxi is not None:
+        return taxi
     references = retrieve_references(prop, message)
     if not references:
         return {"action": "review", "answer": "", "reason": "Property index is empty or not ready"}
