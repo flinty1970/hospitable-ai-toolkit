@@ -13,6 +13,21 @@ It provides self-hosted property knowledge, guest drafts and owner review. Start
 Draft only and complete the live validation checklist before enabling automatic replies.
 AI API usage and hosting may incur charges; chat subscriptions do not include API usage.
 
+## Address and station taxi replies
+
+Confirmed reservation address requests use the account's Hospitable property address after checking reservation, conversation and property identity. Missing or unconfirmed context stays under review. The guest's name comes from the verified reservation, and payload-supplied addresses are ignored.
+
+Informational station taxi replies can use an owner-approved `docs/station_taxi.md` in the selected property's runtime directory. Use `## Station name` headings and a `## General` section for fare caveats and local taxi alternatives. Only mentioned station sections are returned. Prices in these narrow informational requests do not trigger the general price-review rule; ride bookings, payments, booking changes and incidents still require review. Do not put another property's estimates in a shared configuration.
+
+The Windsor-specific owner-approved example is `examples/property-overrides/windsor_station_taxi.md`. To install it for the existing Windsor instance after updating this repository:
+
+```bash
+sudo install -m 644 examples/property-overrides/windsor_station_taxi.md /srv/hospitable-ai/account-one/data/properties/9ae89a6b-ed00-49f8-b1f9-7875e570c3aa/docs/station_taxi.md
+sudo docker compose --project-name account-one --env-file /srv/hospitable-ai/account-one/instance.env up -d --build toolkit
+```
+
+Back up an existing station_taxi.md outside the indexed docs directory before replacement. This narrowly selected file is read directly; no index rebuild is required. These commands do not replay old guest messages.
+
 ## Refreshing approved property knowledge
 
 Property-specific facts belong in that property's approved `docs/*.md`, rather than in generic routing code. Check conflicting instructions before indexing. For example, a manual smart lock may require closing the door, lifting the handle and pressing a locking button; do not infer auto-lock from lifting the handle. Confirm the actual property's procedure.
