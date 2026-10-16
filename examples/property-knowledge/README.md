@@ -1,5 +1,9 @@
 # Generic property knowledge starter pack
 
+## Public-template privacy boundary
+
+Only Winnie Community is intended for public release. Do not include private Windsor/Winston architecture, internal server addresses, access codes, real guest records, credentials or private operational instructions in example material. Validate facts with the property's authorized operator before using any templates in guest-facing knowledge.
+
 These are editable templates, not verified facts about a real property. They use common short-term-rental topics without real names, addresses, passwords, codes, contractor details or automation configuration.
 
 Replace every `[PLACEHOLDER]` with a verified fact or remove the unsupported section. Remove template/editor instructions before indexing. Do not bulk-copy this folder into a property's knowledge index: this README and the AI prompt are authoring instructions, not guest knowledge.
