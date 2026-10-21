@@ -48,6 +48,54 @@ class HostingTests(unittest.TestCase):
         return response
 
 
+
+    def test_paula_logistics_acknowledgement_bypasses_model_and_empty_index(self):
+        message = "Are ok thank you that be good hopefully before I set off … but no worries I understand as they need to check out first … thank you 😊"
+        with patch("hosting.worker.retrieve_references") as retrieve, patch("hosting.ai_service.draft_text") as model:
+            result = worker.prepare_draft({}, message)
+        self.assertEqual(result["action"], "ignored")
+        self.assertEqual(result["answer"], "")
+        retrieve.assert_not_called()
+        model.assert_not_called()
+
+    def test_paula_acknowledgement_never_swallows_a_new_request(self):
+        original = "Are ok thank you that be good hopefully before I set off … but no worries I understand as they need to check out first … thank you 😊"
+        for suffix in (" Can I check in early at 12pm?", " Can I pay later?",
+                       " Please change my booking dates.", " There is a gas leak.",
+                       " The door is broken.", " Can I get a refund?",
+                       " Where are the towels?"):
+            message = original + suffix
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(worker.amenity_logistics_acknowledgement_outcome(message))
+                with patch("hosting.worker.retrieve_references", return_value=[]):
+                    self.assertEqual(worker.prepare_draft({}, message)["action"], "review")
+
+    def test_sensitive_requests_still_review_without_the_model(self):
+        for message in ("Thanks, can I check in early at 12pm?", "Thank you, can I pay later?",
+                        "Please change my booking dates.", "There is a gas leak.",
+                        "Thanks, I need a refund."):
+            with self.subTest(message=message), patch("hosting.worker.retrieve_references") as retrieve:
+                self.assertEqual(worker.prepare_draft({}, message)["action"], "review")
+                retrieve.assert_not_called()
+
+    def test_paula_worker_webhook_creates_no_reply_or_review_notification(self):
+        self.payload["data"]["body"] = "Are ok thank you that be good hopefully before I set off … but no worries I understand as they need to check out first … thank you 😊"
+        with patch.dict(os.environ, {"TOOLKIT_ACCOUNT_ID": "a", "HOSPITABLE_PROPERTY_UUID": "property-a",
+                                    "TOOLKIT_ACCOUNTS_FILE": str(self.registry)}):
+            client = TestClient(worker.create_app())
+        with patch("hosting.worker.resolve_property", return_value="property-a"), \
+                patch("hosting.worker.Outbox.enqueue") as enqueue, \
+                patch("hosting.guest_sending.send") as send, \
+                patch("hosting.ai_service.draft_text") as model:
+            response = client.post("/webhook/hospitable",
+                                   params={"token": os.environ["A_WORKER"]}, json=self.payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["action"], "ignored")
+        self.assertFalse(response.json()["sent"])
+        enqueue.assert_not_called()
+        send.assert_not_called()
+        model.assert_not_called()
+
     def test_pure_german_thanks_is_ignored_without_retrieval(self):
         for message in ("Vielen Dank Martin 👍🏻👍🏻", "Danke!", "Thanks Martin"):
             with self.subTest(message=message), patch("hosting.worker.retrieve_references") as retrieve:

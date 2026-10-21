@@ -119,6 +119,36 @@ class MessageFlowTests(unittest.TestCase):
                 self.assertEqual(result['answer'], '')
                 retrieve.assert_not_called()
 
+    def test_amenity_logistics_acknowledgement_has_no_reply_or_review(self):
+        self.event['data']['body'] = 'Are ok thank you that be good hopefully before I set off … but no worries I understand as they need to check out first … thank you 😊'
+        for automatic in (False, True):
+            with self.subTest(automatic=automatic):
+                self.event['data']['id'] = 'amenity-logistics-' + str(automatic)
+                if automatic:
+                    self.controls.set('test', 'a', shadow=False)
+                    self.controls.set('test', 'a', 'property-a', shadow=False)
+                with patch('hosting.notifications.Outbox.enqueue') as enqueue:
+                    self.assertEqual(self.dispatch(), [])
+                    enqueue.assert_not_called()
+                self.assertEqual(Operations(self.root, 'a', self.account).items(), [])
+                with self.inbox.connect() as db:
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM inbox WHERE state='pending'").fetchone()[0], 0)
+
+    def test_amenity_acknowledgement_gate_and_actionable_suffixes(self):
+        message = 'Are ok thank you that be good hopefully before I set off … but no worries I understand as they need to check out first … thank you 😊'
+        with patch('hosting.worker.retrieve_references') as retrieve, patch('hosting.ai_service.draft_text') as model:
+            result = worker.prepare_draft({}, message)
+            self.assertEqual(result['action'], 'ignored')
+            self.assertEqual(result['answer'], '')
+            retrieve.assert_not_called()
+            model.assert_not_called()
+        for suffix in (' Can we check in early?', ' Can we change booking dates?',
+                       ' We have a payment issue.', ' There is a gas leak.'):
+            with self.subTest(suffix=suffix):
+                result = worker.prepare_draft({}, message + suffix)
+                self.assertEqual(result['action'], 'review')
+                self.assertEqual(result['answer'], '')
+
     def test_paused_gateway_keeps_event_pending(self):
         self.controls.set('test','a',enabled=False)
         self.assertEqual(self.dispatch(),[])
