@@ -126,6 +126,23 @@ def generate(provider, model, key, system, message):
     return text
 
 def draft_text(prop, system, message):
+    # Classify the current guest's intent using the immediate conversation.
+    # A guest acknowledging that an existing guest must check out before
+    # cleaners can inspect an amenity is NOT asking for early check-in.
+    # Do not create a human-review item or reply for a pure acknowledgement.
+    # New or changed arrival/departure timing, access requests, complaints,
+    # maintenance, safety, payment, refunds and booking changes still require
+    # the existing human-review gates, even if accompanied by "thank you".
+    system += (
+        "\nInterpret pronouns and timing references against the preceding "
+        "conversation. Statements such as 'thank you, I understand they "
+        "need to check out first', after staff offered to check whether an "
+        "amenity exists, acknowledge cleaning/access logistics; they do "
+        "not request an earlier arrival. For acknowledgement-only messages "
+        "with no new request, do not draft a guest reply or request host "
+        "review. Preserve mandatory review for genuine actionable timing, "
+        "booking, payment, safety, access, damage, or service requests."
+    )
     root = os.environ.get('TOOLKIT_DATA_DIR')
     aid = os.environ.get('TOOLKIT_ACCOUNT_ID')
     if root and aid:

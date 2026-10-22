@@ -57,6 +57,8 @@ Heating has an opt-in flag but no controller. No direct PriceLabs integration ex
 
 Guest requests requiring host decisions must remain under owner review regardless of language: early check-in, late checkout, booking or guest-count changes, money/refunds, replenishment, service arrangements, faults, damage, safety, complaints and access problems. Routine factual questions can receive grounded drafts. Uncertain meaning or failed model/index processing requires review. Keyword guards are additional checks, not evidence that an unmatched request is safe.
 
+Pending requests to book are an exception to extension review. The worker passes the verified reservation `status` and `departure_date` (taken from your Hospitable account API record, never from the webhook payload) to the model, and the worker prompt treats wording such as "we need an extra day/night" on a pending request as trip context when it matches the dates already requested. It returns `ignored` unless the guest also asks a question, makes a request or wants dates beyond the requested departure. Booking extension and date-change review still applies to accepted or current stays. On a pending request the keyword gate ignores a bare "extra day/night" phrase (no question mark and no `extend`, `extension` or `beyond` wording) so the model can judge it against the requested dates; the gate is otherwise unchanged, and questions, `extend`/`extension` wording and accepted stays still go to owner review before the model runs. Rebuild the container after updating, and test a pending request before enabling automatic replies.
+
 The October 2026 operator rollout includes positive numeric message-ID normalization and explicit multilingual instructions in the existing worker model prompt. These source changes must be committed, tested and rebuilt into the deployed image; this documentation update alone does not install them. Verify your checked-out worker accepts positive integer IDs and contains the multilingual review instructions before deploying.
 
 Owner email notifications are queued durably for worker review/draft outcomes. Community containers do not provide Home Assistant alerts. Gateway receipt does not prove worker processing or email delivery: inspect `data/state/inbox.sqlite3` for state/retry reasons, and each property's `state/events.sqlite3` for the recorded result and alert outbox. Pending events retain their retry schedule across rebuilds; do not resubmit or erase deduplication records to force processing.
@@ -152,8 +154,8 @@ for any additional address you will use. See Owner HTTPS below for LAN access.
 4. You can configure SMTP in `/settings` after startup and test/save it before
    enabling processing. Installer msmtp configuration is an alternative; a tested
    browser email connection is still required to enable community processing.
-5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy Windsor's complete
-   `/etc/*.env` files; they contain unrelated credentials and settings.
+5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy another installation's
+   environment files; they may contain unrelated credentials and settings.
 
 No setup command alters Windsor, Caddy or Hospitable's configured webhook.
 
@@ -398,7 +400,7 @@ data and verify restoration into a separate directory. Then restart the account.
 
 Rollback uses the previous image against compatible current state. Schema version
 1 is recorded; incompatible versions refuse the directory. Database migrations
-must remain backward compatible or require a planned data restore. Restoring an
+must remain backward compatible or require a planned data restore. Restoring
 old delivery ledgers can duplicate alerts or guest replies. Preserve both event history and the guest-send ledger; pausing sending before restoring an older backup is required.
 Deleting a container does not delete bind mounts; do not delete the host directory.
 
@@ -415,8 +417,7 @@ It does not validate real guest generation or a user's SMTP/HA deployment.
 Before enabling automatic replies: stage real payloads and knowledge and complete
 the live checks below. Webhooks use a configured URL token, not verified provider
 signatures. Missed-event reconciliation, retention/deletion policy and operational
-monitoring need further work; the guest-draft review UI is implemented. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. There is no deployment to AI implied
-by publishing this repository.
+monitoring need further work; the guest-draft review UI is implemented. Live guest sending requires staging validation against actual webhook/thread schemas and channel permissions. Heating and self-service OAuth onboarding require separate implementation. Home Assistant integration is unavailable in community containers. Legacy HA configuration/database fields are retained for compatibility but cannot enable HA actions in a container. Committing or publishing source does not deploy an installation.
 
 ### AI provider and model settings
 
@@ -613,7 +614,7 @@ sudo docker build -t hospitable-ai-toolkit:smoke .
 sudo python3 scripts/container_smoke.py hospitable-ai-toolkit:smoke
 ```
 
-The default Docker smoke does not download/test embeddings. To also test semantic indexing, add `--with-index`; that requires network access to download the CPU embedding model. Neither test sends a guest message or calls an AI/SMTP provider. Docker build/startup must be run on a Docker-enabled host; this development workspace has no Docker daemon. Windows / Docker Desktop remains untested.
+The default Docker smoke does not download/test embeddings. To also test semantic indexing, add `--with-index`; that requires network access to download the CPU embedding model. Neither test sends a guest message or calls an AI/SMTP provider. Docker build/startup must be run on a Docker-enabled host; passing unit tests does not verify Docker deployment. Windows / Docker Desktop remains untested.
 
 Before enabling automatic replies, verify with a staging/test conversation:
 
@@ -632,13 +633,15 @@ Existing tests cover staged/mocked message routing, inquiries, source snapshots,
 
 Containers generate a private self-signed certificate on first startup, stored under
 `data/state/tls`. Set `TLS_HOSTS` in instance.env to comma-separated IP addresses or
-DNS names before first startup (for example `192.168.1.172,localhost,127.0.0.1`).
+DNS names before first startup (for example `192.0.2.10,localhost,127.0.0.1`).
+`192.0.2.10` is a documentation-only example: replace it with your own LAN address
+everywhere below; it is not a configured or reachable installation.
 The generated certificate lasts one year. It persists across container rebuilds;
 renew it in Settings before expiry. Uploaded certificates are never automatically replaced.
 
 Owner pages and `/admin/*` require HTTPS. The TLS listener is container port 9443;
 set `HTTPS_BIND=0.0.0.0` and `HTTPS_PORT=8790` for LAN access at
-`https://192.168.1.172:8790/settings`. HTTP remains container port 8790, published
+`https://192.0.2.10:8790/settings`. HTTP remains container port 8790, published
 only on host loopback; set `HOST_PORT=8791` and point this toolkit's Caddy webhook
 upstream at `127.0.0.1:8791`. Preserve other Caddy upstreams. Do not publish the
 HTTP listener on all host interfaces. Ports must not collide.
@@ -667,7 +670,7 @@ public authenticated webhook/MCP routes. No additional background queues run on 
 For an existing Linux account-one deployment with a dedicated `handle @toolkit_webhook`
 block in `/etc/caddy/Caddyfile`, after updating the tracked Compose
 file, run `sudo python3 scripts/enable_lan_https.py --instance
-/srv/hospitable-ai/account-one --address 192.168.1.172`. The script validates the
+/srv/hospitable-ai/account-one --address 192.0.2.10`. The script validates the
 existing dedicated Caddy webhook handle, builds the image before changing ports,
 backs up instance.env/Caddyfile, verifies HTTPS readiness against the persisted
 certificate, and reloads only the updated Caddy configuration. Do not restore the

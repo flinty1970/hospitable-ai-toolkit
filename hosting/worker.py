@@ -39,6 +39,13 @@ An informational arrival time within the verified booking's check-in window,
 with no question, request or problem, is also 'ignored'. Mentioning 'late evening'
 does not itself request a check-in change. Compare any stated date/time with
 reservation_context; conflicting or unverified arrangements require review.
+While reservation_context.status is 'pending' (a request to book the owner has not
+yet accepted), wording such as 'we need an extra day/night' that explains why the
+guest needs the dates already requested is trip context, not a booking extension:
+compare it with arrival_date and departure_date and return action 'ignored' with an
+empty answer, unless the guest also asks a question, makes a request or wants dates
+beyond the requested departure. Extension and date-change review applies to accepted
+or current stays.
 Return ONLY a JSON object with action ('draft', 'review' or 'ignored'), answer (string),
 and reason (string). For review, answer must be empty. Return a grounded draft suitable for the guest. The application, not the model,
 decides whether sending is enabled; human-review results are never sent.
@@ -51,10 +58,60 @@ REVIEW_INTENT = re.compile(
     r"refund|cancel\w*|extend\w*|extension|extra night\w*|early check.?in|"
     r"late check.?out|luggage|price|discount|cctv|damage|door code|password)\b", re.I)
 
+# Benign mentions of fire/smoke/CO (e.g. "we enjoyed the fire", "can I smoke
+# outside?", "where is the carbon monoxide detector?") should not trigger a
+# safety review, unless an active hazard is described.
+ACTIVE_HAZARD = re.compile(
+    r"\b(going off|went off|beeping|chirp\w*|sounding|blaring|smell\w*|smelt|"
+    r"burn\w*|flame\w*|spark\w*|caught|blaze|evacuat\w*|999)\b", re.I)
+BENIGN_SAFETY_WORDING = re.compile(
+    r"\b(?:used|using|lit|lighting|enjoyed|loved?|liked?)\b.{0,40}\b(?:the|that|your) fire\b"
+    r"|\b(?:the|that|your) fire\b.{0,40}\b(?:was|is)\s+(?:very |really |so )?(?:nice|lovely|great|cosy|cozy|warm|good)\b"
+    r"|\b(?:can|could|may) (?:i|we) (?:smoke|vape)\b"
+    r"|^(?:is|are|does|do|where)\b.*\bcarbon monoxide (?:detector|alarm|monitor)s?\b", re.I)
+
+
+PENDING_EXTRA_STAY = re.compile(r"\bextra (?:days?|nights?)\b", re.I)
+PENDING_CHANGE_WORDING = re.compile(r"\b(?:extend\w*|extension|beyond|instead|rather than)\b", re.I)
+
+
+def mask_pending_trip_context(message, reservation_context):
+    """On a pending request to book, a bare 'extra day/night' explains the dates already requested.
+
+    Masked only for the keyword gate so the model can compare it with the requested
+    dates. Questions, extension wording and accepted/current stays are untouched.
+    """
+    if str((reservation_context or {}).get("status") or "").strip().lower() != "pending":
+        return message
+    if "?" in message or PENDING_CHANGE_WORDING.search(message):
+        return message
+    return PENDING_EXTRA_STAY.sub("the stay", message)
+
+
+def needs_safety_review(message):
+    """REVIEW_INTENT check that ignores clearly benign fire/smoke/CO wording."""
+    if not REVIEW_INTENT.search(message):
+        return False
+    text = message.strip()
+    if BENIGN_SAFETY_WORDING.search(text) and not ACTIVE_HAZARD.search(text):
+        masked = re.sub(r"\b(?:the|that|your) fire\b|\bsmoke\b|\bcarbon monoxide\b", "it", text, flags=re.I)
+        return bool(REVIEW_INTENT.search(masked))
+    return True
+
 
 def retrieve_references(prop, message):
     from hosting.indexing import retrieve
     return retrieve(prop["runtime_dir"], message)
+
+def amenity_logistics_acknowledgement_outcome(message):
+    """Recognize the reviewed complete logistics acknowledgement, never a substring."""
+    text = " ".join(re.sub(r"[.…,!👍🏻🏼🏽🏾🏿🙏😊🙂☺️]", " ", message.casefold()).split())
+    if text != ("are ok thank you that be good hopefully before i set off "
+                "but no worries i understand as they need to check out first thank you"):
+        return None
+    return {"action": "ignored", "answer": "",
+            "reason": "Acknowledgement of existing amenity-check logistics; no reply or owner alert"}
+
 
 def acknowledgement_outcome(message):
     """Ignore only complete short courtesies; mixed messages continue routing."""
@@ -153,8 +210,17 @@ def prepare_draft(prop, message, reservation_context=None):
         re.search(r"\b(?:taxi|taxis|uber|cab|cabs)\b", message, re.I)
         and re.search(r"\b(?:arrange|order|pay|payment|reimburse\w*)\b|\b(?:book|reserve)\s+(?:me|us|a|the|my|our)\b", message, re.I)
     )
-    if german_time_change or transport_arrangement or REVIEW_INTENT.search(guarded_message):
+    actionable_request = re.search(
+        r"\b(?:pay|payment|payments|refund|booking change)\b"
+        r"|\bcheck[ -]?in\b[^.!?\n]{0,40}\bearly\b"
+        r"|\b(?:change|amend)\b[^.!?\n]{0,40}\b(?:booking|reservation|dates)\b",
+        message, re.I)
+    guarded_message = mask_pending_trip_context(guarded_message, reservation_context)
+    if german_time_change or transport_arrangement or actionable_request or needs_safety_review(guarded_message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
+    logistics_acknowledgement = amenity_logistics_acknowledgement_outcome(message)
+    if logistics_acknowledgement is not None:
+        return logistics_acknowledgement
     acknowledgement = acknowledgement_outcome(message)
     if acknowledgement is not None:
         return acknowledgement
