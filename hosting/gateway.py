@@ -101,7 +101,10 @@ def resolve_property(account, payload, get=requests.get, context=None):
         raise Unresolved("Payload property conflicts with account API")
     if context is not None and reservation:
         # Only the verified account API record supplies booking dates/times.
-        context.update({key: record.get(key) for key in ("check_in", "arrival_date")})
+        context.update({key: record.get(key) for key in ("check_in", "arrival_date", "departure_date")})
+        booking_status = record.get("status") or ((record.get("reservation_status") or {}).get("current") or {}).get("category")
+        if booking_status:
+            context["status"] = str(booking_status)
         from hosting.factual_requests import address_request
         if address_request(str(data.get("body") or "")):
             status = ((record.get("reservation_status") or {}).get("current") or {}).get("category")
