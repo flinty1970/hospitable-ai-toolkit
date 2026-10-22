@@ -1,6 +1,6 @@
 # Winnie Community
 
-Winnie Community is the community edition of Winnie (formerly Windsor RAG). The existing `hospitable-ai-toolkit` repository, installation commands and configuration identifiers remain compatible.
+Winnie Community is the community edition of Winnie. The existing `hospitable-ai-toolkit` repository, installation commands and configuration identifiers remain compatible.
 
 **Platform testing:** This community toolkit has been tested on Linux only. Windows / Docker Desktop installation, bind mounts, persistence and service setup have not been tested. Windows commands below are guidance, not a verified installation procedure.
 
@@ -154,10 +154,10 @@ for any additional address you will use. See Owner HTTPS below for LAN access.
 4. You can configure SMTP in `/settings` after startup and test/save it before
    enabling processing. Installer msmtp configuration is an alternative; a tested
    browser email connection is still required to enable community processing.
-5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy Windsor's complete
+5. Add only credentials referenced by this instance or the supported AI provider keys. Do not copy another installation's complete
    `/etc/*.env` files; they contain unrelated credentials and settings.
 
-No setup command alters Windsor, Caddy or Hospitable's configured webhook.
+No setup command alters other services, Caddy or Hospitable's configured webhook.
 
 ```bash
 docker compose --env-file /srv/hospitable-ai/account-one/instance.env -p account-one up -d --build
@@ -273,7 +273,7 @@ Optional account `indexing.enabled: true` starts a container-local scheduler.
 `daily_at` and an explicit IANA `timezone` determine its run; each property can
 override settings or opt out. It catches up a missed run after restart, persists
 successful dates, runs properties sequentially and retries failures after an hour.
-It never installs host cron jobs or uses Windsor's `reindex.sh`/PDF builder.
+It never installs host cron jobs or uses any other installation's indexing scripts.
 
 
 ## Creating guest-safe Markdown with any AI assistant
@@ -302,7 +302,7 @@ verification.
 | [ring_camera.md](examples/property-knowledge/ring_camera.md) | Disclosed Ring locations, recording/audio facts and privacy questions |
 | [local_area.md](examples/property-knowledge/local_area.md) | Verified shops, transport, public links and urgent help |
 
-These are generic templates with placeholders, not facts about Windsor or any
+These are generic templates with placeholders, not facts about any
 other property. Replace every placeholder or remove its section. Keep prompts,
 template instructions and owner-only checklists outside the searchable `docs/`
 folder. Exclude automation configuration, private operations, passwords and access
@@ -339,7 +339,7 @@ cardboard?", "When are bins collected?", "Where is the Wi-Fi password?" and
 Public webhook URL: `https://your-host/webhook/hospitable/account-one?token=<secret>`.
 Caddy proxies only that account's route to `127.0.0.1:8790`; do not publish worker
 ports or the admin endpoint. See `examples/Caddyfile.fragment`. Preserve the
-existing Windsor route. Do not log bearer tokens in URL query strings.
+existing route. Do not log bearer tokens in URL query strings.
 
 Only `message.created` is handled. The receiver returns 200 after durable inbox
 storage. The account PAT independently verifies the reservation/inquiry property;
@@ -359,7 +359,7 @@ Proxy the exact MCP and protected-resource metadata paths in Caddy. Paths are
 preserved; no URI stripping is required. Two accounts need distinct public MCP paths.
 Clients use operator-issued Bearer tokens. OAuth login/token issuance is not
 implemented; issuer metadata is not an OAuth server. Clients requiring browser
-OAuth onboarding need that addition before they can connect. Windsor's existing
+OAuth onboarding need that addition before they can connect. Any existing
 owner OAuth/MCP is unrelated and stays running.
 
 ## Optional integrations and switches
@@ -484,7 +484,7 @@ Caddy runs on the host in these instructions, proxying the toolkit's loopback Do
 
 Choose a hostname you control and point its DNS to the Caddy host. For ordinary public automatic certificates, TCP ports 80 and 443 must reach Caddy, with firewall/router forwarding as needed. A private-only hostname needs a suitable DNS challenge setup or Caddy's internal CA trusted on each client instead. The example `examples/Caddyfile.owner.example` allows public authenticated webhook/MCP routes and denies other paths. Owner pages/APIs use the separate container HTTPS listener. Use a trusted LAN/VPN for owner access. No access log is enabled, to avoid storing webhook URL tokens. If you add your own owner reverse-proxy configuration, it must reach the container TLS listener with certificate verification and enforce the intended access restrictions; proxying owner routes to the HTTP gateway returns 426.
 
-**Linux (Debian/Ubuntu).** Install Caddy using the [official package instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian); that package provisions its systemd service. Edit `/etc/caddy/Caddyfile`, adding the example site after replacing `toolkit.example.com` and the internal account ID. Preserve existing sites such as Windsor. Validate before reloading:
+**Linux (Debian/Ubuntu).** Install Caddy using the [official package instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian); that package provisions its systemd service. Edit `/etc/caddy/Caddyfile`, adding the example site after replacing `toolkit.example.com` and the internal account ID. Preserve existing sites such as any other services. Validate before reloading:
 
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
@@ -558,7 +558,7 @@ The review list combines property draft/review events, unresolved gateway events
 
 Backups include **credentials and guest data**: installed secrets, browser AI/SMTP/MCP credentials, configuration, approved documents, source PDFs, indexes, review history, controls, deduplication/send ledgers and scheduled queues. Store archives privately outside the instance folder, copy them to protected off-host storage and encrypt them using your backup system. The tool creates mode-600 archives but does not encrypt them. SHA-256 checksums detect damage; they do not authenticate an archive from an untrusted source. The downloadable embedding model cache is excluded and can be downloaded again.
 
-Run from the repository on the Docker host. Substitute your actual instance directory/project. These commands intentionally stop **this toolkit account** for a consistent snapshot; they do not stop Windsor's separate services.
+Run from the repository on the Docker host. Substitute your actual instance directory/project. These commands intentionally stop **this toolkit account** for a consistent snapshot; they do not stop other services.
 
 ```bash
 cd ~/hospitable-ai-toolkit
