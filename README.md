@@ -1,11 +1,5 @@
 # Winnie Community
 
-## Public edition and private-project boundary
-
-**Winnie Community is the only edition intended for public release.** Windsor/Winston, the private Winnie deployment, Guest Ops Development and their architecture are separate private projects. Never publish private operational code, booking or guest records, credentials, infrastructure details or internal documents in Community.
-
-Review each Community change for public disclosure, test it and commit only approved source. Do not push without explicit operator approval. Private Guest Ops Development inspection and test tools are operator-only maintenance functions; they are not bundled Community guest-facing capabilities.
-
 Winnie Community is the community edition of Winnie (formerly Windsor RAG). The existing `hospitable-ai-toolkit` repository, installation commands and configuration identifiers remain compatible.
 
 **Platform testing:** This community toolkit has been tested on Linux only. Windows / Docker Desktop installation, bind mounts, persistence and service setup have not been tested. Windows commands below are guidance, not a verified installation procedure.

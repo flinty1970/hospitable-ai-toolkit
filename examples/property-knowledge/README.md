@@ -2,7 +2,7 @@
 
 ## Public-template privacy boundary
 
-Only Winnie Community is intended for public release. Do not include private Windsor/Winston architecture, internal server addresses, access codes, real guest records, credentials or private operational instructions in example material. Validate facts with the property's authorized operator before using any templates in guest-facing knowledge.
+Do not include private deployment details, internal server addresses, access codes, real guest records, credentials or private operational instructions in example material. Validate facts with the property's authorized operator before using any templates in guest-facing knowledge.
 
 These are editable templates, not verified facts about a real property. They use common short-term-rental topics without real names, addresses, passwords, codes, contractor details or automation configuration.
 

@@ -57,13 +57,6 @@ def install(app, accounts, data_root=None):
             response.headers['Cache-Control'] = 'no-store'
         return response
 
-    @app.get('/approvals', response_class=HTMLResponse)
-    async def approvals_page(request: Request):
-        authorize(request)
-        return HTMLResponse(Path(__file__).with_name('approvals_ui.html').read_text(), headers={
-            'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-            'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"})
-
     @app.get('/settings', response_class=HTMLResponse)
     async def page():
         return HTMLResponse(Path(__file__).with_name('admin_ui.html').read_text(), headers={
