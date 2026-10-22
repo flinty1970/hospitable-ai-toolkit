@@ -1,4 +1,4 @@
-# Insert into the existing HTTPS site; keep Windsor's routes intact.
+# Insert into the existing HTTPS site; keep other routes intact.
 # Duplicate these routes for account-two using host port 8791.
 # This is URL-token authentication; signing still needs confirmation.
 @toolkit_webhook path /webhook/hospitable/account-one
