@@ -39,6 +39,13 @@ An informational arrival time within the verified booking's check-in window,
 with no question, request or problem, is also 'ignored'. Mentioning 'late evening'
 does not itself request a check-in change. Compare any stated date/time with
 reservation_context; conflicting or unverified arrangements require review.
+While reservation_context.status is 'pending' (a request to book the owner has not
+yet accepted), wording such as 'we need an extra day/night' that explains why the
+guest needs the dates already requested is trip context, not a booking extension:
+compare it with arrival_date and departure_date and return action 'ignored' with an
+empty answer, unless the guest also asks a question, makes a request or wants dates
+beyond the requested departure. Extension and date-change review applies to accepted
+or current stays.
 Return ONLY a JSON object with action ('draft', 'review' or 'ignored'), answer (string),
 and reason (string). For review, answer must be empty. Return a grounded draft suitable for the guest. The application, not the model,
 decides whether sending is enabled; human-review results are never sent.
@@ -131,6 +138,23 @@ def arrival_update_outcome(message, reservation_context):
     return {"action": "ignored", "answer": "", "reason": "Informational arrival update matches verified check-in; no reply or owner alert"}
 
 
+PENDING_EXTRA_STAY = re.compile(r"\bextra (?:days?|nights?)\b", re.I)
+PENDING_CHANGE_WORDING = re.compile(r"\b(?:extend\w*|extension|beyond|instead|rather than)\b", re.I)
+
+
+def mask_pending_trip_context(message, reservation_context):
+    """On a pending request to book, a bare 'extra day/night' explains the dates already requested.
+
+    Masked only for the keyword gate so the model can compare it with the requested
+    dates. Questions, extension wording and accepted/current stays are untouched.
+    """
+    if str((reservation_context or {}).get("status") or "").strip().lower() != "pending":
+        return message
+    if "?" in message or PENDING_CHANGE_WORDING.search(message):
+        return message
+    return PENDING_EXTRA_STAY.sub("the stay", message)
+
+
 def prepare_draft(prop, message, reservation_context=None):
     normalized = " ".join(message.casefold().split())
     third_party = any(marker in normalized for marker in (
@@ -153,6 +177,7 @@ def prepare_draft(prop, message, reservation_context=None):
         re.search(r"\b(?:taxi|taxis|uber|cab|cabs)\b", message, re.I)
         and re.search(r"\b(?:arrange|order|pay|payment|reimburse\w*)\b|\b(?:book|reserve)\s+(?:me|us|a|the|my|our)\b", message, re.I)
     )
+    guarded_message = mask_pending_trip_context(guarded_message, reservation_context)
     if german_time_change or transport_arrangement or REVIEW_INTENT.search(guarded_message):
         return {"action": "review", "answer": "", "reason": "Incident, sensitive information or host decision"}
     acknowledgement = acknowledgement_outcome(message)
